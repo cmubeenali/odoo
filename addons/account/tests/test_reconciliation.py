@@ -43,6 +43,12 @@ class TestReconciliation(AccountingTestCase):
         self.diff_income_account = self.env['res.users'].browse(self.env.uid).company_id.income_currency_exchange_account_id
         self.diff_expense_account = self.env['res.users'].browse(self.env.uid).company_id.expense_currency_exchange_account_id
 
+        self.inbound_payment_method = self.env['account.payment.method'].create({
+            'name': 'inbound',
+            'code': 'IN',
+            'payment_type': 'inbound',
+        })
+
     def create_invoice(self, type='out_invoice', invoice_amount=50, currency_id=None):
         #we create an invoice in given currency
         invoice = self.account_invoice_model.create({'partner_id': self.partner_agrolait_id,
@@ -711,85 +717,46 @@ class TestReconciliation(AccountingTestCase):
         credit_aml.with_context(invoice_id=inv.id).remove_move_reconcile()
         self.assertAlmostEquals(inv.residual, 111)
 
-    def test_partial_reconcile_currencies_02(self):
-        ####
-        # Day 1: Invoice Cust/001 to customer (expressed in USD)
-        # Market value of USD (day 1): 1 USD = 0.5 EUR
-        # * Dr. 100 USD / 50 EUR - Accounts receivable
-        # * Cr. 100 USD / 50 EUR - Revenue
-        ####
-        account_revenue = self.env['account.account'].search(
-            [('user_type_id', '=', self.env.ref(
-                'account.data_account_type_revenue').id)], limit=1)
-        dest_journal_id = self.env['account.journal'].search(
-            [('type', '=', 'purchase'),
-             ('company_id', '=', self.env.ref('base.main_company').id)],
-            limit=1)
-
-        # Delete any old rate - to make sure that we use the ones we need.
-        old_rates = self.env['res.currency.rate'].search(
-            [('currency_id', '=', self.currency_usd_id)])
-        old_rates.unlink()
-
-        self.env['res.currency.rate'].create({
-            'currency_id': self.currency_usd_id,
-            'name': time.strftime('%Y') + '-01-01',
-            'rate': 2,
-        })
-
-        invoice_cust_1 = self.account_invoice_model.create({
+    # Please do forward port all the way up
+    def test_revert_payment_and_reconcile(self):
+        payment = self.env['account.payment'].create({
+            'payment_method_id': self.inbound_payment_method.id,
+            'payment_type': 'inbound',
+            'partner_type': 'customer',
             'partner_id': self.partner_agrolait_id,
-            'account_id': self.account_rcv.id,
-            'type': 'out_invoice',
-            'currency_id': self.currency_usd_id,
-            'date_invoice': time.strftime('%Y') + '-01-01',
+            'journal_id': self.bank_journal_usd.id,
+            'payment_date': '2018-06-04',
+            'amount': 666,
         })
-        self.account_invoice_line_model.create({
-            'quantity': 1.0,
-            'price_unit': 100.0,
-            'invoice_id': invoice_cust_1.id,
-            'name': 'product that cost 100',
-            'account_id': account_revenue.id,
-        })
-        invoice_cust_1.action_invoice_open()
-        self.assertEqual(invoice_cust_1.residual_company_signed, 50.0)
-        aml = invoice_cust_1.move_id.mapped('line_ids').filtered(
-            lambda x: x.account_id == account_revenue)
-        self.assertEqual(aml.credit, 50.0)
-        #####
-        # Day 2: Receive payment for half invoice Cust/1 (in USD)
-        # -------------------------------------------------------
-        # Market value of USD (day 2): 1 USD = 1 EUR
-
-        # Payment transaction:
-        # * Dr. 50 USD / 50 EUR - EUR Bank (valued at market price
-        # at the time of receiving the money)
-        # * Cr. 50 USD / 50 EUR - Accounts Receivable
-        #####
-        self.env['res.currency.rate'].create({
-            'currency_id': self.currency_usd_id,
-            'name': time.strftime('%Y') + '-01-02',
-            'rate': 1,
-        })
-        # register payment on invoice
-        payment = self.env['account.payment'].create(
-            {'payment_type': 'inbound',
-             'payment_method_id': self.env.ref(
-                 'account.account_payment_method_manual_in').id,
-             'partner_type': 'customer',
-             'partner_id': self.partner_agrolait_id,
-             'amount': 50,
-             'currency_id': self.currency_usd_id,
-             'payment_date': time.strftime('%Y') + '-01-02',
-             'journal_id': dest_journal_id.id,
-             })
         payment.post()
-        payment_move_line = False
-        for l in payment.move_line_ids:
-            if l.account_id == invoice_cust_1.account_id:
-                payment_move_line = l
-        invoice_cust_1.register_payment(payment_move_line)
-        # We expect at this point that the invoice should still be open,
-        # because they owe us still 50 CC.
-        self.assertEqual(invoice_cust_1.state, 'open',
-                         'Invoice is in status %s' % invoice_cust_1.state)
+
+        self.assertEqual(len(payment.move_line_ids), 2)
+
+        bank_line = payment.move_line_ids.filtered(lambda l: l.account_id.id == self.bank_journal_usd.default_debit_account_id.id)
+        customer_line = payment.move_line_ids - bank_line
+
+        self.assertEqual(len(bank_line), 1)
+        self.assertEqual(len(customer_line), 1)
+        self.assertNotEqual(bank_line.id, customer_line.id)
+
+        self.assertEqual(bank_line.move_id.id, customer_line.move_id.id)
+        move = bank_line.move_id
+
+        # Reversing the payment's move
+        reversed_move_list = move.reverse_moves('2018-06-04')
+        self.assertEqual(len(reversed_move_list), 1)
+        reversed_move = self.env['account.move'].browse(reversed_move_list[0])
+
+        self.assertEqual(len(reversed_move.line_ids), 2)
+
+        # Testing the reconciliation matching between the move lines and their reversed counterparts
+        reversed_bank_line = reversed_move.line_ids.filtered(lambda l: l.account_id.id == self.bank_journal_usd.default_debit_account_id.id)
+        reversed_customer_line = reversed_move.line_ids - reversed_bank_line
+
+        self.assertEqual(len(reversed_bank_line), 1)
+        self.assertEqual(len(reversed_customer_line), 1)
+        self.assertNotEqual(reversed_bank_line.id, reversed_customer_line.id)
+        self.assertEqual(reversed_bank_line.move_id.id, reversed_customer_line.move_id.id)
+
+        self.assertEqual(reversed_bank_line.full_reconcile_id.id, bank_line.full_reconcile_id.id)
+        self.assertEqual(reversed_customer_line.full_reconcile_id.id, customer_line.full_reconcile_id.id)

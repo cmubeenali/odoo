@@ -233,6 +233,16 @@ class AccountMove(models.Model):
             raise UserError(_("Cannot create unbalanced journal entry."))
         return True
 
+    # Do not forward port in >= saas-14
+    def _reconcile_reversed_pair(self, move, reversed_move):
+        amls_to_reconcile = (move.line_ids + reversed_move.line_ids).filtered(lambda l: not l.reconciled)
+        # Do not forward port changes in this file in >= saas-14
+        accounts_reconcilable = amls_to_reconcile.mapped('account_id').filtered(lambda a: a.reconcile or a.internal_type == 'liquidity')
+        for account in accounts_reconcilable:
+            amls_for_account = amls_to_reconcile.filtered(lambda l: l.account_id.id == account.id)
+            amls_for_account.reconcile()
+            amls_to_reconcile = amls_to_reconcile - amls_for_account
+
     @api.multi
     def _reverse_move(self, date=None, journal_id=None, auto=False):
         self.ensure_one()
@@ -705,6 +715,56 @@ class AccountMoveLine(models.Model):
 
         return debit_moves+credit_moves
 
+            :param new_mv_line_dicts: list of dicts containing values suitable fot account_move_line.create()
+        """
+        if len(self) < 1 or len(self) + len(new_mv_line_dicts) < 2:
+            raise UserError(_('A reconciliation must involve at least 2 move lines.'))
+
+        # Create writeoff move lines
+        if len(new_mv_line_dicts) > 0:
+            writeoff_lines = self.env['account.move.line']
+            company_currency = self[0].account_id.company_id.currency_id
+            writeoff_currency = self[0].currency_id or company_currency
+            for mv_line_dict in new_mv_line_dicts:
+                if writeoff_currency != company_currency:
+                    mv_line_dict['debit'] = writeoff_currency.compute(mv_line_dict['debit'], company_currency)
+                    mv_line_dict['credit'] = writeoff_currency.compute(mv_line_dict['credit'], company_currency)
+                writeoff_lines += self._create_writeoff(mv_line_dict)
+
+            (self + writeoff_lines).reconcile()
+        else:
+            self.reconcile()
+
+    ####################################################
+    # Reconciliation methods
+    ####################################################
+
+    def _get_pair_to_reconcile(self):
+        #field is either 'amount_residual' or 'amount_residual_currency' (if the reconciled account has a secondary currency set)
+        field = self[0].account_id.currency_id and 'amount_residual_currency' or 'amount_residual'
+        if not self[0].account_id.reconcile and self[0].account_id.internal_type == 'liquidity':
+            field = 'balance'
+
+        rounding = self[0].company_id.currency_id.rounding
+        if self[0].currency_id and all([x.amount_currency and x.currency_id == self[0].currency_id for x in self]):
+            #or if all lines share the same currency
+            field = 'amount_residual_currency'
+            rounding = self[0].currency_id.rounding
+        if self._context.get('skip_full_reconcile_check') == 'amount_currency_excluded':
+            field = 'amount_residual'
+        elif self._context.get('skip_full_reconcile_check') == 'amount_currency_only':
+            field = 'amount_residual_currency'
+        #target the pair of move in self that are the oldest
+        sorted_moves = sorted(self, key=lambda a: a.date_maturity or a.date)
+        debit = credit = False
+        for aml in sorted_moves:
+            if credit and debit:
+                break
+            if float_compare(aml[field], 0, precision_rounding=rounding) == 1 and not debit:
+                debit = aml
+            elif float_compare(aml[field], 0, precision_rounding=rounding) == -1 and not credit:
+                credit = aml
+        return debit, credit
 
     @api.multi
     def auto_reconcile_lines(self):
@@ -743,9 +803,9 @@ class AccountMoveLine(models.Model):
         if len(company_ids) > 1:
             raise UserError(_('To reconcile the entries company should be the same for all entries.'))
         if len(set(all_accounts)) > 1:
-            raise UserError(_('Entries are not from the same account.'))
+            raise UserError(_('Entries are not of the same account!'))
         if not (all_accounts[0].reconcile or all_accounts[0].internal_type == 'liquidity'):
-            raise UserError(_('Account %s (%s) does not allow reconciliation. First change the configuration of this account to allow it.') % (all_accounts[0].name, all_accounts[0].code))
+            raise UserError(_('The account %s (%s) is not marked as reconciliable !') % (all_accounts[0].name, all_accounts[0].code))
 
         #reconcile everything that can be
         remaining_moves = self.auto_reconcile_lines()

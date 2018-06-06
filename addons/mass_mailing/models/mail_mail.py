@@ -83,8 +83,8 @@ class MailMail(models.Model):
     @api.multi
     def _send_prepare_values(self, partner=None):
         # TDE: temporary addition (mail was parameter) due to semi-new-API
-        res = super(MailMail, self)._send_prepare_values(partner)
-        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        res = super(MailMail, self).send_get_email_dict(partner)
+        base_url = self.env['ir.config_parameter'].get_param('web.base.url').rstrip('/')
         if self.mailing_id and res.get('body') and res.get('email_to'):
             emails = tools.email_split(res.get('email_to')[0])
             email_to = emails and emails[0] or False
