@@ -53,7 +53,7 @@
 {%- endmacro %}
 
 {% macro create_form() -%}
-  <p>Odoo is up and running! <br />
+  <!-- <p>Odoo is up and running! <br /> -->
   Fill out this form to create a new database. You will install your first app afterwards.</p>
   {{ master_input() }}
   <div class="form-group">
@@ -114,7 +114,10 @@
   <div class="row">
     <div class="col-md-6 col-md-offset-3 o_database_list">
       <div class="text-center">
-        <img src="/web/static/src/img/logo2.png" class="img-responsive center-block"/>
+        <!--use this line for default logo-->
+        <!-- <img src="/web/static/src/img/logo2.png" class="img-responsive center-block"/> -->
+        <!--this line for updated logo-->
+        <img src="/web/static/src/img/eklavya_logo.jpg" class="img-responsive center-block"/>
       </div>
       {% if not list_db %}
       <div class="alert alert-danger text-center">
