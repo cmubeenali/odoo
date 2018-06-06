@@ -1,3 +1,4 @@
 # -*- coding: utf-8 -*-
 
-import maintenance
+from . import maintenance
+from . import res_users

@@ -3,13 +3,16 @@
 <!-- Page --> 
 <template id="assets_frontend" inherit_id="website.assets_frontend" name="website_hr_assets">
     <xpath expr="." position="inside">
-        <link rel='stylesheet' type="text/less" href='/website_hr/static/src/less/website_hr.less'/>
+        <link rel="stylesheet" type="text/scss" href="/website_hr/static/src/scss/website_hr.scss"/>
     </xpath>
 </template>
 
 <template id="aboutus" inherit_id="website.aboutus" customize_show="True" name="Our Team">
-    <xpath expr="//div[@class='oe_structure']" position="after">
+    <xpath expr="//div[hasclass('oe_structure')]" position="after">
         <section class="container" id="team">
+            <t t-set="is_publisher" t-value="request.env['res.users'].has_group('website.group_website_publisher')" />
+            <t t-set="employees_domain" t-value="[] if is_publisher else [('website_published', '=', True)]" />
+            <t t-set="employees" t-value="request.env['hr.employee'].search(employees_domain)" />
             <div class="col-sm-12 text-center" t-if="len(employees)">
                 <h2>Our Team</h2>
             </div>

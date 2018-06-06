@@ -2,17 +2,25 @@
 # This file contains the translation of the following modules:
 # * payment_ogone
 # 
+<<<<<<< HEAD
 # Translators:
 # Martin Trigaux, 2016
 # Ondřej Skuhravý <ondra.sk@volny.cz>, 2016
 # Michal Veselý <michal@veselyberanek.net>, 2018
+=======
+>>>>>>> upstream/master
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server 10.0c\n"
+"Project-Id-Version: Odoo Server 10.saas~18\n"
 "Report-Msgid-Bugs-To: \n"
+<<<<<<< HEAD
 "POT-Creation-Date: 2016-09-07 08:57+0000\n"
 "PO-Revision-Date: 2016-09-07 08:57+0000\n"
 "Last-Translator: Michal Veselý <michal@veselyberanek.net>, 2018\n"
+=======
+"POT-Creation-Date: 2017-09-20 09:53+0000\n"
+"PO-Revision-Date: 2017-09-20 09:53+0000\n"
+>>>>>>> upstream/master
 "Language-Team: Czech (https://www.transifex.com/odoo/teams/41243/cs/)\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -21,13 +29,13 @@ msgstr ""
 "Plural-Forms: nplurals=4; plural=(n == 1 && n % 1 == 0) ? 0 : (n >= 2 && n <= 4 && n % 1 == 0) ? 1: (n % 1 != 0 ) ? 2 : 3;\n"
 
 #. module: payment_ogone
-#: code:addons/payment_ogone/models/payment.py:241
+#: code:addons/payment_ogone/models/payment.py:240
 #, python-format
 msgid "; multiple order found"
 msgstr ""
 
 #. module: payment_ogone
-#: code:addons/payment_ogone/models/payment.py:239
+#: code:addons/payment_ogone/models/payment.py:238
 #, python-format
 msgid "; no order found"
 msgstr ""
@@ -55,17 +63,17 @@ msgstr ""
 #. module: payment_ogone
 #: model:ir.ui.view,arch_db:payment_ogone.ogone_s2s_form
 msgid "Card number"
-msgstr "Číslo platební karty"
-
-#. module: payment_ogone
-#: model:ir.ui.view,arch_db:payment_ogone.ogone_s2s_form
-msgid "Confirm <span class=\"fa fa-long-arrow-right\"/>"
 msgstr ""
 
 #. module: payment_ogone
 #: model:ir.ui.view,arch_db:payment_ogone.ogone_s2s_form
-msgid "Expires"
-msgstr "Expirace"
+msgid "Cardholder name"
+msgstr ""
+
+#. module: payment_ogone
+#: model:ir.ui.view,arch_db:payment_ogone.ogone_s2s_form
+msgid "Expires (MM / YY)"
+msgstr ""
 
 #. module: payment_ogone
 #: model:ir.ui.view,arch_db:payment_ogone.acquirer_form_ogone
@@ -80,29 +88,19 @@ msgid ""
 msgstr ""
 
 #. module: payment_ogone
-#: model:ir.ui.view,arch_db:payment_ogone.ogone_s2s_form
-msgid "MM / YY"
-msgstr "MM / RR"
-
-#. module: payment_ogone
-#: model:ir.ui.view,arch_db:payment_ogone.ogone_s2s_form
-msgid "Name"
-msgstr "Název"
-
-#. module: payment_ogone
-#: code:addons/payment_ogone/models/payment.py:248
+#: code:addons/payment_ogone/models/payment.py:247
 #, python-format
 msgid "Ogone: invalid shasign, received %s, computed %s, for data %s"
 msgstr ""
 
 #. module: payment_ogone
-#: code:addons/payment_ogone/models/payment.py:237
+#: code:addons/payment_ogone/models/payment.py:236
 #, python-format
 msgid "Ogone: received data for reference %s"
 msgstr ""
 
 #. module: payment_ogone
-#: code:addons/payment_ogone/models/payment.py:230
+#: code:addons/payment_ogone/models/payment.py:229
 #, python-format
 msgid ""
 "Ogone: received data with missing reference (%s) or pay_id (%s) or shasign "
@@ -117,7 +115,7 @@ msgstr ""
 #. module: payment_ogone
 #: model:ir.model,name:payment_ogone.model_payment_acquirer
 msgid "Payment Acquirer"
-msgstr "Příjemce platby"
+msgstr ""
 
 #. module: payment_ogone
 #: model:ir.model,name:payment_ogone.model_payment_transaction

@@ -2,6 +2,8 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
 from odoo import api, fields, models
+from odoo.tools import pycompat
+
 
 def selection_fn(model):
     return [(str(key), val) for key, val in enumerate(["Corge", "Grault", "Wheee", "Moog"])]
@@ -46,10 +48,10 @@ for name, field in MODELS:
             return [(record.id, "%s:%s" % (self._name, record.value)) for record in self]
 
         @api.model
-        def name_search(self, name='', args=None, operator='ilike', limit=100):
-            if isinstance(name, basestring) and name.split(':')[0] == self._name:
-                records = self.search([('value', operator, int(name.split(':')[1]))])
-                return records.name_get()
+        def _name_search(self, name, args=None, operator='ilike', limit=100, name_get_uid=None):
+            if isinstance(name, pycompat.string_types) and name.split(':')[0] == self._name:
+                record_ids = self._search([('value', operator, int(name.split(':')[1]))], access_rights_uid=name_get_uid)
+                return self.browse(record_ids).name_get()
             else:
                 return []
 
@@ -68,10 +70,10 @@ class One2ManyChild(models.Model):
         return [(record.id, "%s:%s" % (self._name, record.value)) for record in self]
 
     @api.model
-    def name_search(self, name='', args=None, operator='ilike', limit=100):
-        if isinstance(name, basestring) and name.split(':')[0] == self._name:
-            records = self.search([('value', operator, int(name.split(':')[1]))])
-            return records.name_get()
+    def _name_search(self, name, args=None, operator='ilike', limit=100, name_get_uid=None):
+        if isinstance(name, pycompat.string_types) and name.split(':')[0] == self._name:
+            record_ids = self._search([('value', operator, int(name.split(':')[1]))], access_rights_uid=name_get_uid)
+            return self.browse(record_ids).name_get()
         else:
             return []
 
@@ -122,10 +124,10 @@ class Many2ManyChild(models.Model):
         return [(record.id, "%s:%s" % (self._name, record.value)) for record in self]
 
     @api.model
-    def name_search(self, name='', args=None, operator='ilike', limit=100):
-        if isinstance(name, basestring) and name.split(':')[0] == self._name:
-            records = self.search([('value', operator, int(name.split(':')[1]))])
-            return records.name_get()
+    def _name_search(self, name, args=None, operator='ilike', limit=100, name_get_uid=None):
+        if isinstance(name, pycompat.string_types) and name.split(':')[0] == self._name:
+            record_ids = self._search([('value', operator, int(name.split(':')[1]))], access_rights_uid=name_get_uid)
+            return self.browse(record_ids).name_get()
         else:
             return []
 
@@ -148,7 +150,10 @@ class OnlyOne(models.Model):
     _name = 'export.unique'
 
     value = fields.Integer()
+    value2 = fields.Integer()
+    value3 = fields.Integer()
 
     _sql_constraints = [
         ('value_unique', 'unique (value)', "The value must be unique"),
+        ('pair_unique', 'unique (value2, value3)', "The values must be unique"),
     ]

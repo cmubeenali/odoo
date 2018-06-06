@@ -3,17 +3,23 @@
 import babel.dates
 import re
 import werkzeug
+import json
+
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 from odoo import fields, http, _
-from odoo.addons.website.models.website import slug
-from odoo.http import request
+from odoo.addons.http_routing.models.ir_http import slug
+from odoo.http import content_disposition, request
 
 
 class WebsiteEventController(http.Controller):
 
-    @http.route(['/event', '/event/page/<int:page>', '/events', '/events/page/<int:page>'], type='http', auth="public", website=True)
+    def sitemap_event(env, rule, qs):
+        if not qs or qs.lower() in '/events':
+            yield {'loc': '/events'}
+
+    @http.route(['/event', '/event/page/<int:page>', '/events', '/events/page/<int:page>'], type='http', auth="public", website=True, sitemap=sitemap_event)
     def events(self, page=1, **searches):
         Event = request.env['event.event']
         EventType = request.env['event.type']
@@ -58,7 +64,6 @@ class WebsiteEventController(http.Controller):
         ]
 
         # search domains
-        # TDE note: WTF ???
         current_date = None
         current_type = None
         current_country = None
@@ -113,9 +118,12 @@ class WebsiteEventController(http.Controller):
             step=step,
             scope=5)
 
-        order = 'website_published desc, date_begin'
+        order = 'date_begin'
         if searches.get('date', 'all') == 'old':
-            order = 'website_published desc, date_begin desc'
+            order = 'date_begin desc'
+        if searches["country"] != 'all':   # if we are looking for a specific country
+            order = 'is_online, ' + order  # show physical events first
+        order = 'website_published desc, ' + order
         events = Event.search(dom_without("none"), limit=step, offset=pager['offset'], order=order)
 
         values = {
@@ -133,7 +141,7 @@ class WebsiteEventController(http.Controller):
 
         return request.render("website_event.index", values)
 
-    @http.route(['/event/<model("event.event"):event>/page/<path:page>'], type='http', auth="public", website=True)
+    @http.route(['/event/<model("event.event"):event>/page/<path:page>'], type='http', auth="public", website=True, sitemap=False)
     def event_page(self, event, page, **post):
         values = {
             'event': event,
@@ -163,7 +171,7 @@ class WebsiteEventController(http.Controller):
             target_url += '?enable_editor=1'
         return request.redirect(target_url)
 
-    @http.route(['/event/<model("event.event"):event>/register'], type='http', auth="public", website=True)
+    @http.route(['/event/<model("event.event"):event>/register'], type='http', auth="public", website=True, sitemap=False)
     def event_register(self, event, **post):
         values = {
             'event': event,
@@ -173,10 +181,10 @@ class WebsiteEventController(http.Controller):
         }
         return request.render("website_event.event_description_full", values)
 
-    @http.route('/event/add_event', type='http', auth="user", methods=['POST'], website=True)
+    @http.route('/event/add_event', type='json', auth="user", methods=['POST'], website=True)
     def add_event(self, event_name="New Event", **kwargs):
         event = self._add_event(event_name, request.context)
-        return request.redirect("/event/%s/register?enable_editor=1" % slug(event))
+        return "/event/%s/register?enable_editor=1" % slug(event)
 
     def _add_event(self, event_name=None, context=None, **kwargs):
         if not event_name:
@@ -196,7 +204,7 @@ class WebsiteEventController(http.Controller):
         month = babel.dates.get_month_names('abbreviated', locale=event.env.context.get('lang') or 'en_US')[start_date.month]
         return ('%s %s%s') % (month, start_date.strftime("%e"), (end_date != start_date and ("-" + end_date.strftime("%e")) or ""))
 
-    @http.route('/event/get_country_event_list', type='http', auth='public', website=True)
+    @http.route('/event/get_country_event_list', type='json', auth='public', website=True)
     def get_country_events(self, **post):
         Event = request.env['event.event']
         country_code = request.session['geoip'].get('country_code')
@@ -214,7 +222,7 @@ class WebsiteEventController(http.Controller):
                 "date": self.get_formated_date(event),
                 "event": event,
                 "url": event.website_url})
-        return request.render("website_event.country_events_list", result)
+        return request.env['ir.ui.view'].render_template("website_event.country_events_list", result)
 
     def _process_tickets_details(self, data):
         nb_register = int(data.get('nb_register-0', 0))
@@ -233,16 +241,16 @@ class WebsiteEventController(http.Controller):
         ''' Process data posted from the attendee details form. '''
         registrations = {}
         global_values = {}
-        for key, value in details.iteritems():
+        for key, value in details.items():
             counter, field_name = key.split('-', 1)
             if counter == '0':
                 global_values[field_name] = value
             else:
                 registrations.setdefault(counter, dict())[field_name] = value
-        for key, value in global_values.iteritems():
+        for key, value in global_values.items():
             for registration in registrations.values():
                 registration[key] = value
-        return registrations.values()
+        return list(registrations.values())
 
     @http.route(['/event/<model("event.event"):event>/registration/confirm'], type='http', auth="public", methods=['POST'], website=True)
     def registration_confirm(self, event, **post):
@@ -254,7 +262,22 @@ class WebsiteEventController(http.Controller):
             Attendees += Attendees.sudo().create(
                 Attendees._prepare_attendee_values(registration))
 
+        urls = event._get_event_resource_urls(Attendees.ids)
         return request.render("website_event.registration_complete", {
             'attendees': Attendees,
             'event': event,
+            'google_url': urls.get('google_url'),
+            'iCal_url': urls.get('iCal_url')
         })
+
+    @http.route(['/event/<model("event.event"):event>/ics'], type='http', auth="public", website=True)
+    def make_event_ics_file(self, event, **kwargs):
+        if not event or not event.registration_ids:
+            return request.not_found()
+        files = event._get_ics_file()
+        content = files[event.id]
+        return request.make_response(content, [
+            ('Content-Type', 'application/octet-stream'),
+            ('Content-Length', len(content)),
+            ('Content-Disposition', content_disposition('%s.ics' % event.name))
+        ])

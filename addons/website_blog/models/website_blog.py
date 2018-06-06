@@ -4,8 +4,10 @@
 from datetime import datetime
 import random
 
+import itertools
+
 from odoo import api, models, fields, _
-from odoo.addons.website.models.website import slug
+from odoo.addons.http_routing.models.ir_http import slug
 from odoo.tools.translate import html_translate
 from odoo.tools import html2plaintext
 
@@ -75,6 +77,19 @@ class Blog(models.Model):
         return tag_by_blog
 
 
+class BlogTagCategory(models.Model):
+    _name = 'blog.tag.category'
+    _description = 'Blog Tag Category'
+    _order = 'name'
+
+    name = fields.Char('Name', required=True, translate=True)
+    tag_ids = fields.One2many('blog.tag', 'category_id', string='Tags')
+
+    _sql_constraints = [
+        ('name_uniq', 'unique (name)', "Tag category already exists !"),
+    ]
+
+
 class BlogTag(models.Model):
     _name = 'blog.tag'
     _description = 'Blog Tag'
@@ -82,6 +97,7 @@ class BlogTag(models.Model):
     _order = 'name'
 
     name = fields.Char('Name', required=True, translate=True)
+    category_id = fields.Many2one('blog.tag.category', 'Category', index=True)
     post_ids = fields.Many2many('blog.post', string='Posts')
 
     _sql_constraints = [
@@ -138,20 +154,15 @@ class BlogPost(models.Model):
     teaser = fields.Text('Teaser', compute='_compute_teaser', inverse='_set_teaser')
     teaser_manual = fields.Text(string='Teaser Content')
 
-    website_message_ids = fields.One2many(
-        'mail.message', 'res_id',
-        domain=lambda self: [
-            '&', '&', ('model', '=', self._name), ('message_type', '=', 'comment'), ('path', '=', False)
-        ],
-        string='Website Messages',
-        help="Website communication history",
-    )
+    website_message_ids = fields.One2many(domain=lambda self: [('model', '=', self._name), ('message_type', '=', 'comment')])
+
     # creation / update stuff
     create_date = fields.Datetime('Created on', index=True, readonly=True)
     published_date = fields.Datetime('Published Date')
-    post_date = fields.Datetime('Published date', compute='_compute_post_date', inverse='_set_post_date', store=True)
+    post_date = fields.Datetime('Publishing date', compute='_compute_post_date', inverse='_set_post_date', store=True,
+                                help="The blog post will be visible for your visitors as of this date on the website if it is set as published.")
     create_uid = fields.Many2one('res.users', 'Created by', index=True, readonly=True)
-    write_date = fields.Datetime('Last Modified on', index=True, readonly=True)
+    write_date = fields.Datetime('Last Updated on', index=True, readonly=True)
     write_uid = fields.Many2one('res.users', 'Last Contributor', index=True, readonly=True)
     author_avatar = fields.Binary(related='author_id.image_small', string="Avatar")
     visits = fields.Integer('No of Views', copy=False)
@@ -195,7 +206,7 @@ class BlogPost(models.Model):
                     'website_blog.blog_post_template_new_post',
                     subject=post.name,
                     values={'post': post},
-                    subtype_id=self.env['ir.model.data'].sudo().xmlid_to_res_id('website_blog.mt_blog_blog_published'))
+                    subtype_id=self.env['ir.model.data'].xmlid_to_res_id('website_blog.mt_blog_blog_published'))
             return True
         return False
 
@@ -210,33 +221,36 @@ class BlogPost(models.Model):
         result = True
         for post in self:
             copy_vals = dict(vals)
-            if 'website_published' in vals and 'published_date' not in vals and post.published_date <= fields.Datetime.now():
+            if 'website_published' in vals and 'published_date' not in vals and (post.published_date or '') <= fields.Datetime.now():
                 copy_vals['published_date'] = vals['website_published'] and fields.Datetime.now() or False
             result &= super(BlogPost, self).write(copy_vals)
         self._check_for_publication(vals)
         return result
 
     @api.multi
-    def get_access_action(self):
+    def get_access_action(self, access_uid=None):
         """ Instead of the classic form view, redirect to the post on website
         directly if user is an employee or if the post is published. """
         self.ensure_one()
-        if self.env.user.share and not self.sudo().website_published:
-            return super(BlogPost, self).get_access_action()
+        user = access_uid and self.env['res.users'].sudo().browse(access_uid) or self.env.user
+        if user.share and not self.sudo().website_published:
+            return super(BlogPost, self).get_access_action(access_uid)
         return {
             'type': 'ir.actions.act_url',
-            'url': '/blog/%s/post/%s' % (self.blog_id.id, self.id),
+            'url': self.url,
             'target': 'self',
             'target_type': 'public',
             'res_id': self.id,
         }
 
     @api.multi
-    def _notification_recipients(self, message, groups):
-        groups = super(BlogPost, self)._notification_recipients(message, groups)
+    def _notify_get_groups(self, message, groups):
+        """ Add access button to everyone if the document is published. """
+        groups = super(BlogPost, self)._notify_get_groups(message, groups)
 
-        for group_name, group_method, group_data in groups:
-            group_data['has_button_access'] = True
+        if self.website_published:
+            for group_name, group_method, group_data in groups:
+                group_data['has_button_access'] = True
 
         return groups
 

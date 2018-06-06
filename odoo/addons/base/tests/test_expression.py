@@ -6,7 +6,7 @@ import psycopg2
 from odoo.models import BaseModel
 from odoo.tests.common import TransactionCase
 from odoo.tools import mute_logger
-import odoo.osv.expression as expression
+from odoo.osv import expression
 
 
 class TestExpression(TransactionCase):
@@ -85,10 +85,10 @@ class TestExpression(TransactionCase):
             'b ab': [cids['B'], cids['AB']],
         }
         pids = {}
-        for name, cat_ids in partners_config.iteritems():
+        for name, cat_ids in partners_config.items():
             pids[name] = partners.create({'name': name, 'category_id': [(6, 0, cat_ids)]}).id
 
-        base_domain = [('id', 'in', pids.values())]
+        base_domain = [('id', 'in', list(pids.values()))]
 
         def test(op, value, expected):
             found_ids = partners.search(base_domain + [('category_id', op, value)]).ids
@@ -214,9 +214,8 @@ class TestExpression(TransactionCase):
 
         # create new company with partners, and partners with no company
         company2 = self.env['res.company'].create({'name': 'Acme 2'})
-        for i in xrange(4):
+        for i in range(4):
             Partner.create({'name': 'P of Acme %s' % i, 'company_id': company2.id})
-        for i in xrange(4):
             Partner.create({'name': 'P of All %s' % i, 'company_id': False})
 
         # check if many2one works with negative empty list
@@ -538,7 +537,7 @@ class TestExpression(TransactionCase):
         countries = Country.search([('name', '=like', 'Ind__')])
         self.assertTrue(len(countries) == 1, "Must match India only")
         countries = Country.search([('name', '=ilike', 'z%')])
-        self.assertTrue(len(countries) == 3, "Must match only countries with names starting with Z (currently 3)")
+        self.assertTrue(len(countries) == 2, "Must match only countries with names starting with Z (currently 2)")
 
     def test_translate_search(self):
         Country = self.env['res.country']
@@ -611,6 +610,17 @@ class TestExpression(TransactionCase):
 
         not_be = Partner.with_context(lang='fr_FR').search([('country_id', '!=', 'Belgique')])
         self.assertNotIn(agrolait, not_be)
+
+    def test_or_with_implicit_and(self):
+        # Check that when using expression.OR on a list of domains with at least one
+        # implicit '&' the returned domain is the expected result.
+        # from #24038
+        d1 = [('foo', '=', 1), ('bar', '=', 1)]
+        d2 = ['&', ('foo', '=', 2), ('bar', '=', 2)]
+
+        expected = ['|', '&', ('foo', '=', 1), ('bar', '=', 1),
+                         '&', ('foo', '=', 2), ('bar', '=', 2)]
+        self.assertEqual(expression.OR([d1, d2]), expected)
 
 
 class TestAutoJoin(TransactionCase):

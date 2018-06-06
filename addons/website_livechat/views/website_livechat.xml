@@ -10,11 +10,12 @@
             <xpath expr="." position="inside">
                 <script type="text/javascript" src="/bus/static/src/js/bus.js"></script>
                 <script type="text/javascript" src="/mail/static/src/js/chat_window.js"></script>
+                <script type="text/javascript" src="/mail/static/src/js/document_viewer.js"></script>
                 <script type="text/javascript" src="/mail/static/src/js/thread.js"></script>
                 <script type="text/javascript" src="/im_livechat/static/src/js/im_livechat.js"></script>
-                <link rel="stylesheet" href="/mail/static/src/less/chat_window.less"></link>
-                <link rel="stylesheet" href="/mail/static/src/less/thread.less"></link>
-                <link rel="stylesheet" href="/im_livechat/static/src/less/im_livechat.less"/>
+                <link rel="stylesheet" type="text/scss" href="/mail/static/src/scss/chat_window.scss"></link>
+                <link rel="stylesheet" type="text/scss" href="/mail/static/src/scss/thread.scss"></link>
+                <link rel="stylesheet" type="text/scss" href="/im_livechat/static/src/scss/im_livechat.scss"/>
             </xpath>
         </template>
         <template id="loader" inherit_id="website.layout" name="Livechat : include loader on Website">
@@ -29,15 +30,8 @@
             </xpath>
         </template>
 
-        <!-- Layout add footer -->
-        <template id="header_footer_custom" inherit_id="website.footer_default" name="Footer Rating Livechat Link">
-            <xpath expr="//ul[@id='products']" position="inside">
-                <li><a href="/livechat/">Livechat Support</a></li>
-            </xpath>
-        </template>
-
         <!-- Page Layout -->
-        <template id="channel_page" name="Livechat Channel Satisfaction Page" page="True">
+        <template id="channel_page" name="Livechat Channel Satisfaction Page">
             <t t-call="website.layout">
               <div id="wrap">
                 <div class="container">
@@ -125,7 +119,7 @@
                             <t t-foreach="team" t-as="user" class="media">
                                 <div class="media">
                                     <div class="pull-left" t-if='user.image_small'>
-                                        <img t-att-src="user.image_small and ('data:image/png;base64,' + user.image_small) or '/web/static/src/img/placeholder.png'"
+                                        <img t-att-src="user.image_small and ('data:image/png;base64,' + to_text(user.image_small)) or '/web/static/src/img/placeholder.png'"
                                             class="img-rounded" t-att-alt="user.name"/>
                                     </div>
                                     <div class="media-body">
@@ -158,7 +152,7 @@
                                     <t t-foreach="channels" t-as="channel">
                                         <div class="media">
                                             <a class="pull-left" t-attf-href="/livechat/channel/#{ slug(channel)}">
-                                                <img t-att-src="channel.image_small and ('data:image/png;base64,' + channel.image_small) or '/web/static/src/img/placeholder.png'" t-att-alt="channel.name" />
+                                                <img t-att-src="channel.image_small and ('data:image/png;base64,' + to_text(channel.image_small)) or '/web/static/src/img/placeholder.png'" t-att-alt="channel.name" />
                                             </a>
                                             <div class="media-body">
                                                 <h4 class="media-heading"><t t-esc="channel.name"/></h4>

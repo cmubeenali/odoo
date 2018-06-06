@@ -4,17 +4,16 @@
 # 
 # Translators:
 # Arma Gedonsky <armagedonsky@hot.ee>, 2017
-# Martin Trigaux, 2017
-# Rivo Zängov <eraser@eraser.ee>, 2017
 # Wanradt Koell <wanradt@gmail.com>, 2017
-# Eneli Õigus <enelioigus@gmail.com>, 2018
+# Martin Trigaux <mat@odoo.com>, 2017
+# Rivo Zängov <eraser@eraser.ee>, 2017
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server 10.0c\n"
+"Project-Id-Version: Odoo Server 10.saas~18\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-09-07 08:57+0000\n"
-"PO-Revision-Date: 2016-09-07 08:57+0000\n"
-"Last-Translator: Eneli Õigus <enelioigus@gmail.com>, 2018\n"
+"POT-Creation-Date: 2017-09-20 09:53+0000\n"
+"PO-Revision-Date: 2017-09-20 09:53+0000\n"
+"Last-Translator: Rivo Zängov <eraser@eraser.ee>, 2017\n"
 "Language-Team: Estonian (https://www.transifex.com/odoo/teams/41243/et/)\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -43,13 +42,13 @@ msgstr "Kampaania"
 #. module: utm
 #: model:ir.model.fields,field_description:utm.field_utm_campaign_name
 msgid "Campaign Name"
-msgstr "Kampaania nimi"
+msgstr ""
 
 #. module: utm
 #: model:ir.actions.act_window,name:utm.utm_campaign_act
 #: model:ir.ui.menu,name:utm.menu_utm_campaign_act
 msgid "Campaigns"
-msgstr "Kampaaniad"
+msgstr ""
 
 #. module: utm
 #: model:ir.ui.view,arch_db:utm.utm_medium_view_form
@@ -65,7 +64,7 @@ msgstr "Kanali nimi"
 #. module: utm
 #: model:ir.model,name:utm.model_utm_medium
 msgid "Channels"
-msgstr "Kanalid"
+msgstr ""
 
 #. module: utm
 #: model:utm.campaign,name:utm.utm_campaign_christmas_special
@@ -105,6 +104,11 @@ msgid "Display Name"
 msgstr "Näidatav nimi"
 
 #. module: utm
+#: model:utm.campaign,name:utm.utm_campaign_email_campaign_products
+msgid "Email Campaign - Products"
+msgstr ""
+
+#. module: utm
 #: model:utm.campaign,name:utm.utm_campaign_email_campaign_services
 msgid "Email Campaign - Services"
 msgstr ""
@@ -117,7 +121,7 @@ msgstr ""
 #. module: utm
 #: model:ir.model,name:utm.model_ir_http
 msgid "HTTP routing"
-msgstr "HTTP routing"
+msgstr ""
 
 #. module: utm
 #: model:ir.model.fields,field_description:utm.field_utm_campaign_id
@@ -174,7 +178,6 @@ msgid "Medium"
 msgstr "Keskmine"
 
 #. module: utm
-#: model:utm.campaign,name:utm.utm_campaign_email_campaign_products
 #: model:utm.source,name:utm.utm_source_newsletter
 msgid "Newsletter"
 msgstr "Infoleht"
@@ -187,7 +190,7 @@ msgstr "Müük"
 #. module: utm
 #: model:utm.source,name:utm.utm_source_search_engine
 msgid "Search engine"
-msgstr "Otsingumootor"
+msgstr ""
 
 #. module: utm
 #: model:ir.model,name:utm.model_utm_source
@@ -219,8 +222,8 @@ msgstr ""
 #: model:ir.model.fields,help:utm.field_sale_order_campaign_id
 #: model:ir.model.fields,help:utm.field_utm_mixin_campaign_id
 msgid ""
-"This is a name that helps you keep track of your different campaign efforts "
-"Ex: Fall_Drive, Christmas_Special"
+"This is a name that helps you keep track of your different campaign efforts,"
+" i.e. Fall_Drive, Christmas_Special"
 msgstr ""
 
 #. module: utm
@@ -230,7 +233,7 @@ msgstr ""
 #: model:ir.model.fields,help:utm.field_link_tracker_medium_id
 #: model:ir.model.fields,help:utm.field_sale_order_medium_id
 #: model:ir.model.fields,help:utm.field_utm_mixin_medium_id
-msgid "This is the method of delivery.Ex: Postcard, Email, or Banner Ad"
+msgid "This is the method of delivery, i.e. Postcard, Email, or Banner Ad"
 msgstr ""
 
 #. module: utm
@@ -241,14 +244,14 @@ msgstr ""
 #: model:ir.model.fields,help:utm.field_sale_order_source_id
 #: model:ir.model.fields,help:utm.field_utm_mixin_source_id
 msgid ""
-"This is the source of the link Ex:Search Engine, another domain,or name of "
-"email list"
+"This is the source of the link, i.e. Search Engine, another domain, or name "
+"of email list"
 msgstr ""
 
 #. module: utm
 #: model:utm.source,name:utm.utm_source_twitter
 msgid "Twitter"
-msgstr "Twitter"
+msgstr ""
 
 #. module: utm
 #: model:ir.ui.menu,name:utm.marketing_utm

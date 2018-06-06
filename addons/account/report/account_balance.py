@@ -45,7 +45,7 @@ class ReportTrialBalance(models.AbstractModel):
             currency = account.currency_id and account.currency_id or account.company_id.currency_id
             res['code'] = account.code
             res['name'] = account.name
-            if account.id in account_result.keys():
+            if account.id in account_result:
                 res['debit'] = account_result[account.id].get('debit')
                 res['credit'] = account_result[account.id].get('credit')
                 res['balance'] = account_result[account.id].get('balance')
@@ -59,7 +59,7 @@ class ReportTrialBalance(models.AbstractModel):
 
 
     @api.model
-    def render_html(self, docids, data=None):
+    def get_report_values(self, docids, data=None):
         if not data.get('form') or not self.env.context.get('active_model'):
             raise UserError(_("Form content is missing, this report cannot be printed."))
 
@@ -69,12 +69,13 @@ class ReportTrialBalance(models.AbstractModel):
         accounts = docs if self.model == 'account.account' else self.env['account.account'].search([])
         account_res = self.with_context(data['form'].get('used_context'))._get_accounts(accounts, display_account)
 
-        docargs = {
+        return {
             'doc_ids': self.ids,
             'doc_model': self.model,
             'data': data['form'],
             'docs': docs,
             'time': time,
             'Accounts': account_res,
+            'company_id': self.env['res.company'].browse(
+                data['form']['company_id'][0]),
         }
-        return self.env['report'].render('account.report_trialbalance', docargs)

@@ -10,11 +10,11 @@ class ProductCategory(models.Model):
     property_account_income_categ_id = fields.Many2one('account.account', company_dependent=True,
         string="Income Account", oldname="property_account_income_categ",
         domain=[('deprecated', '=', False)],
-        help="This account will be used for invoices to value sales.")
+        help="This account will be used when validating a customer invoice.")
     property_account_expense_categ_id = fields.Many2one('account.account', company_dependent=True,
         string="Expense Account", oldname="property_account_expense_categ",
         domain=[('deprecated', '=', False)],
-        help="This account will be used for invoices to value expenses.")
+        help="The expense is accounted for when a vendor bill is validated, except in anglo-saxon accounting with perpetual inventory valuation in which case the expense (Cost of Goods Sold account) is recognized at the customer invoice validation.")
 
 #----------------------------------------------------------
 # Products
@@ -23,17 +23,17 @@ class ProductTemplate(models.Model):
     _inherit = "product.template"
 
     taxes_id = fields.Many2many('account.tax', 'product_taxes_rel', 'prod_id', 'tax_id', string='Customer Taxes',
-        domain=[('type_tax_use', '=', 'sale')])
+        domain=[('type_tax_use', '=', 'sale')], default=lambda self: self.env.user.company_id.account_sale_tax_id)
     supplier_taxes_id = fields.Many2many('account.tax', 'product_supplier_taxes_rel', 'prod_id', 'tax_id', string='Vendor Taxes',
-        domain=[('type_tax_use', '=', 'purchase')])
+        domain=[('type_tax_use', '=', 'purchase')], default=lambda self: self.env.user.company_id.account_purchase_tax_id)
     property_account_income_id = fields.Many2one('account.account', company_dependent=True,
         string="Income Account", oldname="property_account_income",
         domain=[('deprecated', '=', False)],
-        help="This account will be used for invoices instead of the default one to value sales for the current product.")
+        help="Keep this field empty to use the default value from the product category.")
     property_account_expense_id = fields.Many2one('account.account', company_dependent=True,
         string="Expense Account", oldname="property_account_expense",
         domain=[('deprecated', '=', False)],
-        help="This account will be used for invoices instead of the default one to value expenses for the current product.")
+        help="The expense is accounted for when a vendor bill is validated, except in anglo-saxon accounting with perpetual inventory valuation in which case the expense (Cost of Goods Sold account) is recognized at the customer invoice validation. If the field is empty, it uses the one defined in the product category.")
 
     @api.multi
     def write(self, vals):
@@ -48,7 +48,7 @@ class ProductTemplate(models.Model):
             if dict(self._cr.fetchall()) != uoms:
                 products = self.env['product.product'].search([('product_tmpl_id', 'in', self.ids)])
                 if self.env['account.move.line'].search_count([('product_id', 'in', products.ids)]):
-                    raise UserError(_('You can not change the unit of measure of a product that has been already used in an account journal item. If you need to change the unit of measure, you may deactivate this product.'))
+                    raise UserError(_('You can not change the unit of measure of a product that has been already used in an account journal item. If you need to change the unit of measure, you should archive this product and create a new one.'))
         return res
 
     @api.multi

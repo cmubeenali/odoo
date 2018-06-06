@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 <template id="assets_mail_themes">
-    <link rel="stylesheet" type="text/less" href="/mass_mailing/static/src/less/themes/theme_default.less"/>
+    <link rel="stylesheet" type="text/scss" href="/mass_mailing/static/src/scss/themes/theme_basic.scss"/>
+    <link rel="stylesheet" type="text/scss" href="/mass_mailing/static/src/scss/themes/theme_default.scss"/>
 </template>
 
 <template id="FieldTextHtmlInline" name="Editor layout">
@@ -11,6 +12,7 @@
                 <t t-call-assets="mass_mailing.assets_mail_themes"/>
                 <script type="text/javascript" src="/mass_mailing/static/src/js/mass_mailing_editor.js"></script>
             </t>
+            <base target="_parent"/>
         </t>
         <t t-set="head" t-value="head_mm_field_text_html_inline + (head or '')"/>
 

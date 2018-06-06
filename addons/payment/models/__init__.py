@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
-import payment_acquirer
-import res_partner
-import account_payment
+from . import payment_acquirer
+from . import account_invoice
+from . import res_partner
+from . import account_payment
+from . import chart_template

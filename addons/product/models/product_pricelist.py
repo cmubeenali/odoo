@@ -6,7 +6,9 @@ from itertools import chain
 from odoo import api, fields, models, tools, _
 from odoo.exceptions import UserError, ValidationError
 
-import odoo.addons.decimal_precision as dp
+from odoo.addons import decimal_precision as dp
+
+from odoo.tools import pycompat
 
 
 class Pricelist(models.Model):
@@ -19,7 +21,7 @@ class Pricelist(models.Model):
 
     def _get_default_item_ids(self):
         ProductPricelistItem = self.env['product.pricelist.item']
-        vals = ProductPricelistItem.default_get(ProductPricelistItem._fields.keys())
+        vals = ProductPricelistItem.default_get(list(ProductPricelistItem._fields))
         vals.update(compute_price='formula')
         return [[0, False, vals]]
 
@@ -40,7 +42,7 @@ class Pricelist(models.Model):
         return [(pricelist.id, '%s (%s)' % (pricelist.name, pricelist.currency_id.name)) for pricelist in self]
 
     @api.model
-    def name_search(self, name, args=None, operator='ilike', limit=100):
+    def _name_search(self, name, args=None, operator='ilike', limit=100, name_get_uid=None):
         if name and operator == '=' and not args:
             # search on the name of the pricelist and its currency, opposite of name_get(),
             # Used by the magic context filter in the product search view.
@@ -73,10 +75,10 @@ class Pricelist(models.Model):
             self._cr.execute(query, query_args)
             ids = [r[0] for r in self._cr.fetchall()]
             # regular search() to apply ACLs - may limit results below limit in some cases
-            pricelists = self.search([('id', 'in', ids)], limit=limit)
-            if pricelists:
-                return pricelists.name_get()
-        return super(Pricelist, self).name_search(name, args, operator=operator, limit=limit)
+            pricelist_ids = self._search([('id', 'in', ids)], limit=limit, access_rights_uid=name_get_uid)
+            if pricelist_ids:
+                return self.browse(pricelist_ids).name_get()
+        return super(Pricelist, self)._name_search(name, args, operator=operator, limit=limit, name_get_uid=name_get_uid)
 
     def _compute_price_rule_multi(self, products_qty_partner, date=False, uom_id=False):
         """ Low-level method - Multi pricelist, multi products
@@ -125,7 +127,7 @@ class Pricelist(models.Model):
             while categ:
                 categ_ids[categ.id] = True
                 categ = categ.parent_id
-        categ_ids = categ_ids.keys()
+        categ_ids = list(categ_ids)
 
         is_product_template = products[0]._name == "product.template"
         if is_product_template:
@@ -149,7 +151,7 @@ class Pricelist(models.Model):
             'AND (item.pricelist_id = %s) '
             'AND (item.date_start IS NULL OR item.date_start<=%s) '
             'AND (item.date_end IS NULL OR item.date_end>=%s)'
-            'ORDER BY item.applied_on, item.min_quantity desc, categ.parent_left desc',
+            'ORDER BY item.applied_on, item.min_quantity desc, categ.complete_name desc',
             (prod_tmpl_ids, prod_ids, categ_ids, self.id, date, date))
 
         item_ids = [x[0] for x in self._cr.fetchall()]
@@ -168,7 +170,7 @@ class Pricelist(models.Model):
             qty_in_product_uom = qty
             if qty_uom_id != product.uom_id.id:
                 try:
-                    qty_in_product_uom = self.env['product.uom'].browse([self._context['uom']])._compute_quantity(qty, product.uom_id)
+                    qty_in_product_uom = self.env['uom.uom'].browse([self._context['uom']])._compute_quantity(qty, product.uom_id)
                 except UserError:
                     # Ignored - incompatible UoM in context, use default product UoM
                     pass
@@ -177,7 +179,7 @@ class Pricelist(models.Model):
             # TDE SURPRISE: product can actually be a template
             price = product.price_compute('list_price')[product.id]
 
-            price_uom = self.env['product.uom'].browse([qty_uom_id])
+            price_uom = self.env['uom.uom'].browse([qty_uom_id])
             for rule in items:
                 if rule.min_quantity and qty_in_product_uom < rule.min_quantity:
                     continue
@@ -204,7 +206,7 @@ class Pricelist(models.Model):
 
                 if rule.base == 'pricelist' and rule.base_pricelist_id:
                     price_tmp = rule.base_pricelist_id._compute_price_rule([(product, qty, partner)])[product.id][0]  # TDE: 0 = price, 1 = rule
-                    price = rule.base_pricelist_id.currency_id.compute(price_tmp, self.currency_id, round=False)
+                    price = rule.base_pricelist_id.currency_id._convert(price_tmp, self.currency_id, self.env.user.company_id, date, round=False)
                 else:
                     # if base option is public price take sale price else cost price of product
                     # price_compute returns the price in the context UoM, i.e. qty_uom_id
@@ -239,7 +241,7 @@ class Pricelist(models.Model):
                 break
             # Final price conversion into pricelist currency
             if suitable_rule and suitable_rule.compute_price != 'fixed' and suitable_rule.base != 'pricelist':
-                price = product.currency_id.compute(price, self.currency_id, round=False)
+                price = product.currency_id._convert(price, self.currency_id, self.env.user.company_id, date, round=False)
 
             results[product.id] = (price, suitable_rule and suitable_rule.id or False)
 
@@ -250,7 +252,14 @@ class Pricelist(models.Model):
         """ For a given pricelist, return price for products
         Returns: dict{product_id: product price}, in the given pricelist """
         self.ensure_one()
-        return dict((product_id, res_tuple[0]) for product_id, res_tuple in self._compute_price_rule(zip(products, quantities, partners), date=date, uom_id=uom_id).iteritems())
+        return {
+            product_id: res_tuple[0]
+            for product_id, res_tuple in self._compute_price_rule(
+                list(pycompat.izip(products, quantities, partners)),
+                date=date,
+                uom_id=uom_id
+            ).items()
+        }
 
     def get_product_price(self, product, quantity, partner, date=False, uom_id=False):
         """ For a given pricelist, return price for a given product """
@@ -271,7 +280,7 @@ class Pricelist(models.Model):
     @api.multi
     def price_get(self, prod_id, qty, partner=None):
         """ Multi pricelist, mono product - returns price per pricelist """
-        return dict((key, price[0]) for key, price in self.price_rule_get(prod_id, qty, partner=partner).items())
+        return {key: price[0] for key, price in self.price_rule_get(prod_id, qty, partner=partner).items()}
 
     @api.multi
     def price_rule_get_multi(self, products_by_qty_by_partner):
@@ -287,7 +296,8 @@ class Pricelist(models.Model):
     @api.model
     def _price_get_multi(self, pricelist, products_by_qty_by_partner):
         """ Mono pricelist, multi product - return price per product """
-        return pricelist.get_products_price(zip(**products_by_qty_by_partner))
+        return pricelist.get_products_price(
+            list(pycompat.izip(**products_by_qty_by_partner)))
 
     def _get_partner_pricelist(self, partner_id, company_id=None):
         """ Retrieve the applicable pricelist for a given partner in a given company.
@@ -357,9 +367,6 @@ class PricelistItem(models.Model):
         ('0_product_variant', 'Product Variant')], "Apply On",
         default='3_global', required=True,
         help='Pricelist Item applicable on selected option')
-    sequence = fields.Integer(
-        'Sequence', default=5, required=True,
-        help="Gives the order in which the pricelist items will be checked. The evaluation gives highest priority to lowest sequence and stops as soon as a matching item is found.")
     base = fields.Selection([
         ('list_price', 'Public Price'),
         ('standard_price', 'Cost'),
@@ -411,13 +418,13 @@ class PricelistItem(models.Model):
     @api.constrains('base_pricelist_id', 'pricelist_id', 'base')
     def _check_recursion(self):
         if any(item.base == 'pricelist' and item.pricelist_id and item.pricelist_id == item.base_pricelist_id for item in self):
-            raise ValidationError(_('Error! You cannot assign the Main Pricelist as Other Pricelist in PriceList Item!'))
+            raise ValidationError(_('You cannot assign the Main Pricelist as Other Pricelist in PriceList Item'))
         return True
 
     @api.constrains('price_min_margin', 'price_max_margin')
     def _check_margin(self):
         if any(item.price_min_margin > item.price_max_margin for item in self):
-            raise ValidationError(_('Error! The minimum margin should be lower than the maximum margin.'))
+            raise ValidationError(_('The minimum margin should be lower than the maximum margin.'))
         return True
 
     @api.one

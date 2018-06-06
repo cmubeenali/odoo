@@ -1,16 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <menuitem id="account_reports_ro_statements_menu" name="Romanian Statements" parent="account.menu_finance_reports" sequence="3" groups="account.group_account_user"/>
+    <menuitem id="account_reports_ro_statements_menu" name="Romania" parent="account.menu_finance_reports" sequence="0" groups="account.group_account_user"/>
 
     <record id="data_account_type_not_classified" model="account.account.type">
         <field name="name">CONTURI IN AFARA BILANTULUI</field>
-    </record>
-
-    <record id="pcg_581" model="account.account.template">
-        <field name="name">Viramente interne</field>
-        <field name="code">581</field>
-        <field name="user_type_id" ref="account.data_account_type_current_assets"/>
-        <field name="reconcile" eval="True"/>
     </record>
 
     <!-- Chart template -->
@@ -18,16 +11,12 @@
         <field name="name">Romania - Chart of Accounts</field>
         <field name="bank_account_code_prefix">512</field>
         <field name="cash_account_code_prefix">531</field>
+        <field name="transfer_account_code_prefix">581</field>
         <field name="code_digits">6</field>
         <field name="currency_id" ref="base.RON"/>
-        <field name="transfer_account_id" ref="pcg_581"/>
     </record>
 
     <!-- Account Templates -->
-
-    <record id="pcg_581" model="account.account.template">
-        <field name="chart_template_id" ref="ro_chart_template"/>
-    </record>
 
     <record id="pcg_1011" model="account.account.template">
         <field name="name">Capital subscris nevărsat</field>

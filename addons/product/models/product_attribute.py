@@ -20,7 +20,7 @@ class ProductAttribute(models.Model):
 
 class ProductAttributevalue(models.Model):
     _name = "product.attribute.value"
-    _order = 'sequence'
+    _order = 'sequence, attribute_id, id'
 
     name = fields.Char('Value', required=True, translate=True)
     sequence = fields.Integer('Sequence', help="Determine the display order")
@@ -76,7 +76,7 @@ class ProductAttributevalue(models.Model):
 
     @api.multi
     def _variant_name(self, variable_attributes):
-        return ", ".join([v.name for v in self.sorted(key=lambda r: r.attribute_id.name) if v.attribute_id in variable_attributes])
+        return ", ".join([v.name for v in self if v.attribute_id in variable_attributes])
 
 
 class ProductAttributePrice(models.Model):
@@ -98,15 +98,16 @@ class ProductAttributeLine(models.Model):
     @api.constrains('value_ids', 'attribute_id')
     def _check_valid_attribute(self):
         if any(line.value_ids > line.attribute_id.value_ids for line in self):
-            raise ValidationError(_('Error ! You cannot use this attribute with the following value.'))
+            raise ValidationError(_('You cannot use this attribute with the following value.'))
         return True
 
     @api.model
-    def name_search(self, name='', args=None, operator='ilike', limit=100):
+    def _name_search(self, name, args=None, operator='ilike', limit=100, name_get_uid=None):
         # TDE FIXME: currently overriding the domain; however as it includes a
         # search on a m2o and one on a m2m, probably this will quickly become
         # difficult to compute - check if performance optimization is required
         if name and operator in ('=', 'ilike', '=ilike', 'like', '=like'):
             args = ['|', ('attribute_id', operator, name), ('value_ids', operator, name)]
-            return self.search(args, limit=limit).name_get()
-        return super(ProductAttributeLine, self).name_search(name=name, args=args, operator=operator, limit=limit)
+            attribute_ids = self._search(args, limit=limit, access_rights_uid=name_get_uid)
+            return self.browse(attribute_ids).name_get()
+        return super(ProductAttributeLine, self)._name_search(name=name, args=args, operator=operator, limit=limit, name_get_uid=name_get_uid)

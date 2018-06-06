@@ -1,33 +1,46 @@
 # -*- coding: utf-8 -*-
 
-import re
+import logging
+import pytz
+import werkzeug
+
+from datetime import datetime
 
 from odoo import api, fields, models, _
-from odoo.addons.website.models.website import slug
+from odoo.addons.http_routing.models.ir_http import slug
+from odoo.exceptions import UserError
+from odoo.tools import DEFAULT_SERVER_DATETIME_FORMAT
+
+_logger = logging.getLogger(__name__)
+
+try:
+    import vobject
+except ImportError:
+    _logger.warning("`vobject` Python module not found, iCal file generation disabled. Consider installing this module if you want to generate iCal files")
+    vobject = None
+
+GOOGLE_CALENDAR_URL = 'https://www.google.com/calendar/render?'
+
+
+class EventType(models.Model):
+    _name = 'event.type'
+    _inherit = ['event.type']
+
+    website_menu = fields.Boolean(
+        'Display a dedicated menu on Website')
 
 
 class Event(models.Model):
     _name = 'event.event'
     _inherit = ['event.event', 'website.seo.metadata', 'website.published.mixin']
 
-    def _default_hashtag(self):
-        return re.sub("[- \\.\\(\\)\\@\\#\\&]+", "", self.env.user.company_id.name).lower()
-
-    twitter_hashtag = fields.Char('Twitter Hashtag', default=_default_hashtag)
     website_published = fields.Boolean(track_visibility='onchange')
-    website_message_ids = fields.One2many(
-        'mail.message', 'res_id',
-        domain=lambda self: [
-            '&', ('model', '=', self._name), ('message_type', '=', 'comment')
-        ],
-        string='Website Messages',
-        help="Website communication history",
-    )
+
     is_participating = fields.Boolean("Is Participating", compute="_compute_is_participating")
 
-    show_menu = fields.Boolean('Dedicated Menu', compute='_get_show_menu', inverse='_set_show_menu',
-                               help="Creates menus Introduction, Location and Register on the page "
-                                    " of the event on the website.", store=True)
+    website_menu = fields.Boolean('Dedicated Menu',
+        help="Creates menus Introduction, Location and Register on the page "
+             " of the event on the website.", copy=False)
     menu_id = fields.Many2one('website.menu', 'Event Menu', copy=False)
 
     def _compute_is_participating(self):
@@ -46,46 +59,48 @@ class Event(models.Model):
             if event.id:  # avoid to perform a slug on a not yet saved record in case of an onchange.
                 event.website_url = '/event/%s' % slug(event)
 
-    @api.multi
-    def _get_new_menu_pages(self):
-        """ Retuns a list of tuple ('Page name', 'relative page url') for the event """
+    @api.onchange('event_type_id')
+    def _onchange_type(self):
+        super(Event, self)._onchange_type()
+        if self.event_type_id:
+            self.website_menu = self.event_type_id.website_menu
+
+    def _get_menu_entries(self):
+        """ Method returning menu entries to display on the website view of the
+        event, possibly depending on some options in inheriting modules. """
         self.ensure_one()
-        todo = [
-            (_('Introduction'), 'website_event.template_intro'),
-            (_('Location'), 'website_event.template_location')
+        return [
+            (_('Introduction'), False, 'website_event.template_intro'),
+            (_('Location'), False, 'website_event.template_location'),
+            (_('Register'), '/event/%s/register' % slug(self), False),
         ]
-        result = []
-        for name, path in todo:
-            complete_name = name + ' ' + self.name
-            newpath = self.env['website'].new_page(complete_name, path, ispage=False)
-            url = "/event/" + slug(self) + "/page/" + newpath
-            result.append((name, url))
-        result.append((_('Register'), '/event/%s/register' % slug(self)))
-        return result
 
     @api.multi
-    def _set_show_menu(self):
+    def write(self, vals):
+        res = super(Event, self).write(vals)
         for event in self:
-            if event.menu_id and not event.show_menu:
-                event.menu_id.unlink()
-            elif event.show_menu and not event.menu_id:
-                root_menu = self.env['website.menu'].create({'name': event.name})
-                to_create_menus = event._get_new_menu_pages()
-                seq = 0
-                for name, url in to_create_menus:
-                    self.env['website.menu'].create({
-                        'name': name,
-                        'url': url,
-                        'parent_id': root_menu.id,
-                        'sequence': seq,
-                    })
-                    seq += 1
-                event.menu_id = root_menu
+            if 'website_menu' in vals:
+                if event.menu_id and not event.website_menu:
+                    event.menu_id.unlink()
+                elif event.website_menu:
+                    if not event.menu_id:
+                        root_menu = self.env['website.menu'].create({'name': event.name})
+                        event.menu_id = root_menu
+                    for sequence, (name, url, xml_id) in enumerate(self._get_menu_entries()):
+                        self._create_menu(sequence, name, url, xml_id)
+        return res
 
-    @api.multi
-    def _get_show_menu(self):
-        for event in self:
-            event.show_menu = bool(event.menu_id)
+    def _create_menu(self, sequence, name, url, xml_id):
+        if not url:
+            newpath = self.env['website'].new_page(name + ' ' + self.name, template=xml_id, ispage=False)['url']
+            url = "/event/" + slug(self) + "/page/" + newpath[1:]
+        menu = self.env['website.menu'].create({
+            'name': name,
+            'url': url,
+            'parent_id': self.menu_id.id,
+            'sequence': sequence,
+        })
+        return menu
 
     @api.multi
     def google_map_img(self, zoom=8, width=298, height=298):
@@ -119,3 +134,42 @@ class Event(models.Model):
             'target': 'new',
             'url': '/report/html/%s/%s?enable_editor' % ('event.event_event_report_template_badge', self.id),
         }
+
+    @api.multi
+    def _get_ics_file(self):
+        """ Returns iCalendar file for the event invitation.
+            :returns a dict of .ics file content for each event
+        """
+        result = {}
+        if not vobject:
+            return result
+
+        for event in self:
+            cal = vobject.iCalendar()
+            cal_event = cal.add('vevent')
+
+            if not event.date_begin or not event.date_end:
+                raise UserError(_("No date has been specified for the event, no file will be generated."))
+            cal_event.add('created').value = fields.Datetime.from_string(fields.Datetime.now()).replace(tzinfo=pytz.timezone('UTC'))
+            cal_event.add('dtstart').value = fields.Datetime.from_string(event.date_begin).replace(tzinfo=pytz.timezone('UTC'))
+            cal_event.add('dtend').value = fields.Datetime.from_string(event.date_end).replace(tzinfo=pytz.timezone('UTC'))
+            cal_event.add('summary').value = event.name
+            if event.address_id:
+                cal_event.add('location').value = event.sudo().address_id.contact_address
+
+            result[event.id] = cal.serialize().encode('utf-8')
+        return result
+
+    def _get_event_resource_urls(self, attendees):
+        url_date_start = datetime.strptime(self.date_begin, DEFAULT_SERVER_DATETIME_FORMAT).strftime('%Y%m%dT%H%M%SZ')
+        url_date_stop = datetime.strptime(self.date_end, DEFAULT_SERVER_DATETIME_FORMAT).strftime('%Y%m%dT%H%M%SZ')
+        params = werkzeug.url_encode({
+            'action': 'TEMPLATE',
+            'text': self.name,
+            'dates': url_date_start + '/' + url_date_stop,
+            'location': self.sudo().address_id.contact_address.replace('\n', ' '),
+            'details': self.name,
+        })
+        google_url = GOOGLE_CALENDAR_URL + params
+        iCal_url = '/event/%s/ics?%s' % (slug(self), params)
+        return {'google_url': google_url, 'iCal_url': iCal_url}

@@ -1,7 +1,9 @@
 from odoo.addons.account.tests.account_test_users import AccountTestUsers
 import datetime
+from odoo.tests import tagged
 
 
+@tagged('post_install', '-at_install')
 class TestAccountCustomerInvoice(AccountTestUsers):
 
     def test_customer_invoice(self):
@@ -70,12 +72,6 @@ class TestAccountCustomerInvoice(AccountTestUsers):
         # I check that Initially customer invoice is in the "Draft" state
         self.assertEquals(self.account_invoice_customer0.state, 'draft')
 
-        # I change the state of invoice to "Proforma2" by clicking PRO-FORMA button
-        self.account_invoice_customer0.action_invoice_proforma2()
-
-        # I check that the invoice state is now "Proforma2"
-        self.assertEquals(self.account_invoice_customer0.state, 'proforma2')
-
         # I check that there is no move attached to the invoice
         self.assertEquals(len(self.account_invoice_customer0.move_id), 0)
 
@@ -94,16 +90,17 @@ class TestAccountCustomerInvoice(AccountTestUsers):
         # I verify that invoice is now in Paid state
         assert (self.account_invoice_customer0.state == 'paid'), "Invoice is not in Paid state"
 
+        self.partner3.invalidate_cache(ids=self.partner3.ids)
         total_after_confirm = self.partner3.total_invoiced
         self.assertEquals(total_after_confirm - total_before_confirm, self.account_invoice_customer0.amount_untaxed_signed)
 
-        # I refund the invoice Using Refund Button
+        # I created a credit note Using Add Credit Note Button
         invoice_refund_obj = self.env['account.invoice.refund']
         self.account_invoice_refund_0 = invoice_refund_obj.create(dict(
-            description='Refund To China Export',
+            description='Credit Note for China Export',
             date=datetime.date.today(),
             filter_refund='refund'
         ))
 
-        # I clicked on refund button.
+        # I clicked on Add Credit Note button.
         self.account_invoice_refund_0.invoice_refund()

@@ -12,6 +12,7 @@ from werkzeug.exceptions import Forbidden
 
 from odoo import api, fields, models, modules, tools, SUPERUSER_ID, _
 from odoo.exceptions import UserError, ValidationError
+from odoo.tools import pycompat, misc
 
 _logger = logging.getLogger(__name__)
 
@@ -33,14 +34,12 @@ class Forum(models.Model):
         TDE TODO: move me somewhere else, auto_init ? """
         forum_uuids = self.env['ir.config_parameter'].search([('key', '=', 'website_forum.uuid')])
         if not forum_uuids:
-            forum_uuids.set_param('website_forum.uuid', str(uuid.uuid4()), ['base.group_system'])
+            forum_uuids.set_param('website_forum.uuid', str(uuid.uuid4()))
 
     @api.model
     def _get_default_faq(self):
-        fname = modules.get_module_resource('website_forum', 'data', 'forum_default_faq.html')
-        with open(fname, 'r') as f:
+        with misc.file_open('website_forum/data/forum_default_faq.html', 'r') as f:
             return f.read()
-        return False
 
     # description and use
     name = fields.Char('Forum Name', required=True, translate=True)
@@ -49,9 +48,9 @@ class Forum(models.Model):
     description = fields.Text(
         'Description',
         translate=True,
-        default='This community is for professionals and enthusiasts of our products and services. '
-                'Share and discuss the best content and new marketing ideas, '
-                'build your professional profile and become a better marketer together.')
+        default=lambda s: _('This community is for professionals and enthusiasts of our products and services. '
+                            'Share and discuss the best content and new marketing ideas, '
+                            'build your professional profile and become a better marketer together.'))
     welcome_message = fields.Html(
         'Welcome Message',
         default = """<section class="bg-info" style="height: 168px;"><div class="container">
@@ -166,7 +165,7 @@ class Forum(models.Model):
         post_tags = []
         existing_keep = []
         user = self.env.user
-        for tag in filter(None, tags.split(',')):
+        for tag in (tag for tag in tags.split(',') if tag):
             if tag.startswith('_'):  # it's a new tag
                 # check that not arleady created meanwhile or maybe excluded by the limit on the search
                 tag_ids = Tag.search([('name', '=', tag[1:])])
@@ -208,11 +207,7 @@ class Post(models.Model):
         ('link', 'Article'),
         ('discussion', 'Discussion')],
         string='Type', default='question', required=True)
-    website_message_ids = fields.One2many(
-        'mail.message', 'res_id',
-        domain=lambda self: ['&', ('model', '=', self._name), ('message_type', 'in', ['email', 'comment'])],
-        string='Post Messages', help="Comments on forum post",
-    )
+    website_message_ids = fields.One2many(domain=lambda self: [('model', '=', self._name), ('message_type', 'in', ['email', 'comment'])])
 
     # history
     create_date = fields.Datetime('Asked on', index=True, readonly=True)
@@ -379,7 +374,7 @@ class Post(models.Model):
         is_admin = user.id == SUPERUSER_ID
         # sudoed recordset instead of individual posts so values can be
         # prefetched in bulk
-        for post, post_sudo in itertools.izip(self, self.sudo()):
+        for post, post_sudo in pycompat.izip(self, self.sudo()):
             is_creator = post.create_uid == user
 
             post.karma_accept = post.forum_id.karma_answer_accept_own if post.parent_id.create_uid == user else post.forum_id.karma_answer_accept_all
@@ -435,12 +430,12 @@ class Post(models.Model):
         post = super(Post, self.with_context(mail_create_nolog=True)).create(vals)
         # deleted or closed questions
         if post.parent_id and (post.parent_id.state == 'close' or post.parent_id.active is False):
-            raise UserError(_('Posting answer on a [Deleted] or [Closed] question is not possible'))
+            raise UserError(_('Posting answer on a [Deleted] or [Closed] question is not possible.'))
         # karma-based access
         if not post.parent_id and not post.can_ask:
-            raise KarmaError('Not enough karma to create a new question')
+            raise KarmaError('You don\'t have enough karma to create a new question.')
         elif post.parent_id and not post.can_answer:
-            raise KarmaError('Not enough karma to answer to a question')
+            raise KarmaError('You don\'t have enough karma to answer a question.')
         if not post.parent_id and not post.can_post:
             post.sudo().state = 'pending'
 
@@ -532,14 +527,14 @@ class Post(models.Model):
                     subject=_('Re: %s') % post.parent_id.name,
                     partner_ids=[(4, p.id) for p in tag_partners],
                     channel_ids=[(4, c.id) for c in tag_channels],
-                    subtype_id=self.env['ir.model.data'].sudo().xmlid_to_res_id('website_forum.mt_answer_new'))
+                    subtype_id=self.env['ir.model.data'].xmlid_to_res_id('website_forum.mt_answer_new'))
             elif post.state == 'active' and not post.parent_id:
                 post.message_post_with_view(
                     'website_forum.forum_post_template_new_question',
                     subject=post.name,
                     partner_ids=[(4, p.id) for p in tag_partners],
                     channel_ids=[(4, c.id) for c in tag_channels],
-                    subtype_id=self.env['ir.model.data'].sudo().xmlid_to_res_id('website_forum.mt_question_new'))
+                    subtype_id=self.env['ir.model.data'].xmlid_to_res_id('website_forum.mt_question_new'))
             elif post.state == 'pending' and not post.parent_id:
                 # TDE FIXME: in master, you should probably use a subtype;
                 # however here we remove subtype but set partner_ids
@@ -550,7 +545,7 @@ class Post(models.Model):
                     'website_forum.forum_post_template_validation',
                     subject=post.name,
                     partner_ids=partners.ids,
-                    subtype_id=self.env['ir.model.data'].sudo().xmlid_to_res_id('mail.mt_note'))
+                    subtype_id=self.env['ir.model.data'].xmlid_to_res_id('mail.mt_note'))
         return True
 
     @api.multi
@@ -786,7 +781,7 @@ class Post(models.Model):
         return True
 
     @api.multi
-    def get_access_action(self):
+    def get_access_action(self, access_uid=None):
         """ Instead of the classic form view, redirect to the post on the website directly """
         self.ensure_one()
         return {
@@ -798,17 +793,19 @@ class Post(models.Model):
         }
 
     @api.multi
-    def _notification_recipients(self, message, groups):
-        groups = super(Post, self)._notification_recipients(message, groups)
+    def _notify_get_groups(self, message, groups):
+        """ Add access button to everyone if the document is active. """
+        groups = super(Post, self)._notify_get_groups(message, groups)
 
-        for group_name, group_method, group_data in groups:
-            group_data['has_button_access'] = True
+        if self.state == 'active':
+            for group_name, group_method, group_data in groups:
+                group_data['has_button_access'] = True
 
         return groups
 
     @api.multi
     @api.returns('self', lambda value: value.id)
-    def message_post(self, message_type='notification', subtype=None, **kwargs):
+    def message_post(self, message_type='notification', **kwargs):
         question_followers = self.env['res.partner']
         if self.ids and message_type == 'comment':  # user comments have a restriction on karma
             # add followers of comments on the parent post
@@ -828,7 +825,7 @@ class Post(models.Model):
                 raise KarmaError('Not enough karma to comment')
             if not kwargs.get('record_name') and self.parent_id:
                 kwargs['record_name'] = self.parent_id.name
-        return super(Post, self).message_post(message_type=message_type, subtype=subtype, **kwargs)
+        return super(Post, self).message_post(message_type=message_type, **kwargs)
 
     @api.multi
     def message_get_message_notify_values(self, message, message_values):
@@ -877,12 +874,12 @@ class Vote(models.Model):
 
         # own post check
         if vote.user_id.id == vote.post_id.create_uid.id:
-            raise UserError(_('Not allowed to vote for its own post'))
+            raise UserError(_('It is not allowed to vote for its own post.'))
         # karma check
         if vote.vote == '1' and not vote.post_id.can_upvote:
-            raise KarmaError('Not enough karma to upvote.')
+            raise KarmaError('You don\'t have enough karma toupvote.')
         elif vote.vote == '-1' and not vote.post_id.can_downvote:
-            raise KarmaError('Not enough karma to downvote.')
+            raise KarmaError('You don\'t have enough karma to downvote.')
 
         if vote.post_id.parent_id:
             karma_value = self._get_karma_value('0', vote.vote, vote.forum_id.karma_gen_answer_upvote, vote.forum_id.karma_gen_answer_downvote)
@@ -897,12 +894,12 @@ class Vote(models.Model):
             for vote in self:
                 # own post check
                 if vote.user_id.id == vote.post_id.create_uid.id:
-                    raise UserError(_('Not allowed to vote for its own post'))
+                    raise UserError(_('It is not allowed to vote for its own post.'))
                 # karma check
                 if (values['vote'] == '1' or vote.vote == '-1' and values['vote'] == '0') and not vote.post_id.can_upvote:
-                    raise KarmaError('Not enough karma to upvote.')
+                    raise KarmaError('You don\'t have enough karma to upvote.')
                 elif (values['vote'] == '-1' or vote.vote == '1' and values['vote'] == '0') and not vote.post_id.can_downvote:
-                    raise KarmaError('Not enough karma to downvote.')
+                    raise KarmaError('You don\'t have enough karma to downvote.')
 
                 # karma update
                 if vote.post_id.parent_id:
@@ -941,5 +938,5 @@ class Tags(models.Model):
     def create(self, vals):
         forum = self.env['forum.forum'].browse(vals.get('forum_id'))
         if self.env.user.karma < forum.karma_tag_create:
-            raise KarmaError(_('Not enough karma to create a new Tag'))
+            raise KarmaError(_('You don\'t have enough karma to create a new Tag.'))
         return super(Tags, self.with_context(mail_create_nolog=True, mail_create_nosubscribe=True)).create(vals)

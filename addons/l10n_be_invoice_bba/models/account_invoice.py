@@ -34,7 +34,7 @@ class AccountInvoice(models.Model):
     def _check_communication(self):
         for inv in self:
             if inv.reference_type == 'bba' and not self.check_bbacomm(inv.reference):
-                raise ValidationError(_('Invalid BBA Structured Communication !'))
+                raise ValidationError(_('Invalid BBA Structured Communication.'))
 
     def check_bbacomm(self, val):
         supported_chars = '0-9+*/ '
@@ -48,7 +48,7 @@ class AccountInvoice(models.Model):
             if mod == int(bbacomm[-2:]):
                 return True
 
-    @api.onchange('partner_id', 'type')
+    @api.onchange('partner_id', 'type', 'reference_type')
     def _onchange_partner_id(self):
         result = super(AccountInvoice, self)._onchange_partner_id()
         reference = False
@@ -62,7 +62,6 @@ class AccountInvoice(models.Model):
         self.reference = reference
         return result
 
-    @api.multi
     def generate_bbacomm(self, type, reference_type, partner_id, reference):
         reference = reference or ''
         algorithm = False
@@ -174,6 +173,7 @@ class AccountInvoice(models.Model):
         return super(AccountInvoice, self).write(vals)
 
     @api.multi
+    @api.returns('self', lambda value: value.id)
     def copy(self, default=None):
         self.ensure_one()
         default = default or {}

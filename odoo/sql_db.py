@@ -10,9 +10,9 @@ the ORM does, in fact.
 
 from contextlib import contextmanager
 from functools import wraps
+import itertools
 import logging
 import time
-import urlparse
 import uuid
 
 import psycopg2
@@ -20,6 +20,7 @@ import psycopg2.extras
 import psycopg2.extensions
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT, ISOLATION_LEVEL_READ_COMMITTED, ISOLATION_LEVEL_REPEATABLE_READ
 from psycopg2.pool import PoolError
+from werkzeug import urls
 
 psycopg2.extensions.register_type(psycopg2.extensions.UNICODE)
 
@@ -46,9 +47,11 @@ for name, typeoid in types_mapping.items():
 psycopg2.extensions.register_type(psycopg2.extensions.new_type((700, 701, 1700,), 'float', undecimalize))
 
 
-import tools
+from . import tools
+from .tools.func import frame_codeinfo
+from .tools import pycompat
 
-from tools import parse_version as pv
+from .tools import parse_version as pv
 if pv(psycopg2.__version__) < pv('2.7'):
     from psycopg2._psycopg import QuotedString
     def adapt_string(adapted):
@@ -57,10 +60,9 @@ if pv(psycopg2.__version__) < pv('2.7'):
             raise ValueError("A string literal cannot contain NUL (0x00) characters.")
         return QuotedString(adapted)
 
-    psycopg2.extensions.register_adapter(str, adapt_string)
-    psycopg2.extensions.register_adapter(unicode, adapt_string)
+    for type_ in pycompat.string_types:
+        psycopg2.extensions.register_adapter(type_, adapt_string)
 
-from tools.func import frame_codeinfo
 from datetime import timedelta
 import threading
 from inspect import currentframe
@@ -197,9 +199,9 @@ class Cursor(object):
         row = self._obj.fetchone()
         return row and self.__build_dict(row)
     def dictfetchmany(self, size):
-        return map(self.__build_dict, self._obj.fetchmany(size))
+        return [self.__build_dict(row) for row in self._obj.fetchmany(size)]
     def dictfetchall(self):
-        return map(self.__build_dict, self._obj.fetchall())
+        return [self.__build_dict(row) for row in self._obj.fetchall()]
 
     def __del__(self):
         if not self._closed and not self._cnx.closed:
@@ -224,14 +226,15 @@ class Cursor(object):
 
         if self.sql_log:
             now = time.time()
-            _logger.debug("query: %s", query)
+            encoding = psycopg2.extensions.encodings[self.connection.encoding]
+            _logger.debug("query: %s", self._obj.mogrify(query, params).decode(encoding, 'replace'))
 
         try:
             params = params or None
             res = self._obj.execute(query, params)
-        except Exception:
+        except Exception as e:
             if self._default_log_exceptions if log_exceptions is None else log_exceptions:
-                _logger.info("bad query: %s", self._obj.query or query)
+                _logger.error("bad query: %s\nERROR: %s", self._obj.query or query, e)
             raise
 
         # simple query count is always computed
@@ -268,10 +271,8 @@ class Cursor(object):
             sum = 0
             if sqllogs[type]:
                 sqllogitems = sqllogs[type].items()
-                sqllogitems.sort(key=lambda k: k[1][1])
                 _logger.debug("SQL LOG %s:", type)
-                sqllogitems.sort(lambda x, y: cmp(x[1][0], y[1][0]))
-                for r in sqllogitems:
+                for r in sorted(sqllogitems, key=lambda k: k[1]):
                     delay = timedelta(microseconds=r[1][1])
                     _logger.debug("table: %s: %s/%s", r[0], delay, r[1][0])
                     sum += r[1][1]
@@ -426,42 +427,68 @@ class Cursor(object):
     def closed(self):
         return self._closed
 
-class TestCursor(Cursor):
-    """ A cursor to be used for tests. It keeps the transaction open across
-        several requests, and simulates committing, rolling back, and closing.
+
+class TestCursor(object):
+    """ A pseudo-cursor to be used for tests, on top of a real cursor. It keeps
+        the transaction open across requests, and simulates committing, rolling
+        back, and closing:
+
+              test cursor           | queries on actual cursor
+            ------------------------+---------------------------------------
+              cr = TestCursor(...)  | SAVEPOINT test_cursor_N
+                                    |
+              cr.execute(query)     | query
+                                    |
+              cr.commit()           | SAVEPOINT test_cursor_N
+                                    |
+              cr.rollback()         | ROLLBACK TO SAVEPOINT test_cursor_N
+                                    |
+              cr.close()            | ROLLBACK TO SAVEPOINT test_cursor_N
+                                    |
+
     """
-    def __init__(self, *args, **kwargs):
-        super(TestCursor, self).__init__(*args, **kwargs)
+    _savepoint_seq = itertools.count()
+
+    def __init__(self, cursor, lock):
+        self._closed = False
+        self._cursor = cursor
+        # we use a lock to serialize concurrent requests
+        self._lock = lock
+        self._lock.acquire()
         # in order to simulate commit and rollback, the cursor maintains a
         # savepoint at its last commit
-        self.execute("SAVEPOINT test_cursor")
-        # we use a lock to serialize concurrent requests
-        self._lock = threading.RLock()
-
-    def acquire(self):
-        self._lock.acquire()
-
-    def release(self):
-        self._lock.release()
-
-    def force_close(self):
-        super(TestCursor, self).close()
+        self._savepoint = "test_cursor_%s" % next(self._savepoint_seq)
+        self._cursor.execute('SAVEPOINT "%s"' % self._savepoint)
 
     def close(self):
         if not self._closed:
-            self.rollback()             # for stuff that has not been committed
-        self.release()
+            self._closed = True
+            self._cursor.execute('ROLLBACK TO SAVEPOINT "%s"' % self._savepoint)
+            self._lock.release()
 
     def autocommit(self, on):
         _logger.debug("TestCursor.autocommit(%r) does nothing", on)
 
     def commit(self):
-        self.execute("RELEASE SAVEPOINT test_cursor")
-        self.execute("SAVEPOINT test_cursor")
+        self._cursor.execute('SAVEPOINT "%s"' % self._savepoint)
 
     def rollback(self):
-        self.execute("ROLLBACK TO SAVEPOINT test_cursor")
-        self.execute("SAVEPOINT test_cursor")
+        self._cursor.execute('ROLLBACK TO SAVEPOINT "%s"' % self._savepoint)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is None:
+            self.commit()
+        self.close()
+
+    def __getattr__(self, name):
+        value = getattr(self._cursor, name)
+        if callable(value) and self._closed:
+            raise psycopg2.OperationalError('Unable to use a closed cursor.')
+        return value
+
 
 class LazyCursor(object):
     """ A proxy object to a cursor. The cursor itself is allocated only if it is
@@ -482,7 +509,7 @@ class LazyCursor(object):
         if cr is None:
             from odoo import registry
             cr = self._cursor = registry(self.dbname).cursor()
-            for _ in xrange(self._depth):
+            for _ in range(self._depth):
                 cr.__enter__()
         return getattr(cr, name)
 
@@ -634,23 +661,12 @@ class Connection(object):
         _logger.debug('create %scursor to %r', cursor_type, self.dsn)
         return Cursor(self.__pool, self.dbname, self.dsn, serialized=serialized)
 
-    def test_cursor(self, serialized=True):
-        cursor_type = serialized and 'serialized ' or ''
-        _logger.debug('create test %scursor to %r', cursor_type, self.dsn)
-        return TestCursor(self.__pool, self.dbname, self.dsn, serialized=serialized)
-
     # serialized_cursor is deprecated - cursors are serialized by default
     serialized_cursor = cursor
 
-    def __nonzero__(self):
-        """Check if connection is possible"""
-        try:
-            _logger.info("__nonzero__() is deprecated. (It is too expensive to test a connection.)")
-            cr = self.cursor()
-            cr.close()
-            return True
-        except Exception:
-            return False
+    def __bool__(self):
+        raise NotImplementedError()
+    __nonzero__ = __bool__
 
 def connection_info_for(db_or_uri):
     """ parse the given `db_or_uri` and return a 2-tuple (dbname, connection_params)
@@ -665,7 +681,7 @@ def connection_info_for(db_or_uri):
     """
     if db_or_uri.startswith(('postgresql://', 'postgres://')):
         # extract db from uri
-        us = urlparse.urlsplit(db_or_uri)
+        us = urls.url_parse(db_or_uri)
         if len(us.path) > 1:
             db_name = us.path[1:]
         elif us.username:
@@ -675,7 +691,7 @@ def connection_info_for(db_or_uri):
         return db_name, {'dsn': db_or_uri}
 
     connection_info = {'database': db_or_uri}
-    for p in ('host', 'port', 'user', 'password'):
+    for p in ('host', 'port', 'user', 'password', 'sslmode'):
         cfg = tools.config['db_' + p]
         if cfg:
             connection_info[p] = cfg

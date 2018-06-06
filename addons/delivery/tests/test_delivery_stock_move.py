@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 
 from odoo.addons.account.tests.account_test_classes import AccountingTestCase
+from odoo.tests import tagged
 
 
+@tagged('post_install', '-at_install')
 class StockMoveInvoice(AccountingTestCase):
 
     def setUp(self):
@@ -15,7 +17,7 @@ class StockMoveInvoice(AccountingTestCase):
         self.pricelist_id = self.env.ref('product.list0')
         self.product_11 = self.env.ref('product.product_product_11')
         self.product_icecream = self.env.ref('stock.product_icecream')
-        self.product_uom_kgm = self.env.ref('product.product_uom_kgm')
+        self.product_uom_kgm = self.env.ref('uom.product_uom_kgm')
         self.normal_delivery = self.env.ref('delivery.normal_delivery_carrier')
 
     def test_01_delivery_stock_move(self):
@@ -40,8 +42,9 @@ class StockMoveInvoice(AccountingTestCase):
             'carrier_id': self.normal_delivery.id
         })
 
-        # I add delivery cost in Sale order
-        self.sale_prepaid.delivery_set()
+        # I add delivery cost in Sales order
+        self.sale_prepaid.get_delivery_price()
+        self.sale_prepaid.set_delivery_line()
 
         # I confirm the SO.
         self.sale_prepaid.action_confirm()

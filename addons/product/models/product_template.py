@@ -4,15 +4,16 @@
 import itertools
 import psycopg2
 
-import odoo.addons.decimal_precision as dp
+from odoo.addons import decimal_precision as dp
 
 from odoo import api, fields, models, tools, _
-from odoo.exceptions import ValidationError, except_orm
+from odoo.exceptions import ValidationError, RedirectWarning, except_orm
+from odoo.tools import pycompat
 
 
 class ProductTemplate(models.Model):
     _name = "product.template"
-    _inherit = ['mail.thread']
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _description = "Product Template"
     _order = "name"
 
@@ -20,10 +21,17 @@ class ProductTemplate(models.Model):
         if self._context.get('categ_id') or self._context.get('default_categ_id'):
             return self._context.get('categ_id') or self._context.get('default_categ_id')
         category = self.env.ref('product.product_category_all', raise_if_not_found=False)
-        return category and category.type == 'normal' and category.id or False
+        if not category:
+            category = self.env['product.category'].search([], limit=1)
+        if category:
+            return category.id
+        else:
+            err_msg = _('You must define at least one product category in order to be able to create products.')
+            redir_msg = _('Go to Internal Categories')
+            raise RedirectWarning(err_msg, self.env.ref('product.product_category_action_form').id, redir_msg)
 
     def _get_default_uom_id(self):
-        return self.env["product.uom"].search([], limit=1, order='id').id
+        return self.env["uom.uom"].search([], limit=1, order='id').id
 
     name = fields.Char('Name', index=True, required=True, translate=True)
     sequence = fields.Integer('Sequence', default=1, help='Gives the sequence order when displaying a product list')
@@ -33,11 +41,11 @@ class ProductTemplate(models.Model):
     description_purchase = fields.Text(
         'Purchase Description', translate=True,
         help="A description of the Product that you want to communicate to your vendors. "
-             "This description will be copied to every Purchase Order, Receipt and Vendor Bill/Refund.")
+             "This description will be copied to every Purchase Order, Receipt and Vendor Bill/Credit Note.")
     description_sale = fields.Text(
         'Sale Description', translate=True,
         help="A description of the Product that you want to communicate to your customers. "
-             "This description will be copied to every Sale Order, Delivery Order and Customer Invoice/Refund")
+             "This description will be copied to every Sales Order, Delivery Order and Customer Invoice/Credit Note")
     type = fields.Selection([
         ('consu', _('Consumable')),
         ('service', _('Service'))], string='Product Type', default='consu', required=True,
@@ -48,8 +56,8 @@ class ProductTemplate(models.Model):
              'the e-commerce such as e-books, music, pictures,... The "Digital Product" module has to be installed.')
     rental = fields.Boolean('Can be Rent')
     categ_id = fields.Many2one(
-        'product.category', 'Internal Category',
-        change_default=True, default=_get_default_category_id, domain="[('type','=','normal')]",
+        'product.category', 'Product Category',
+        change_default=True, default=_get_default_category_id,
         required=True, help="Select category for the current product")
 
     currency_id = fields.Many2one(
@@ -60,7 +68,7 @@ class ProductTemplate(models.Model):
         'Price', compute='_compute_template_price', inverse='_set_template_price',
         digits=dp.get_precision('Product Price'))
     list_price = fields.Float(
-        'Sale Price', default=1.0,
+        'Sales Price', default=1.0,
         digits=dp.get_precision('Product Price'),
         help="Base price to compute the customer price. Sometimes called the catalog price.")
     lst_price = fields.Float(
@@ -70,7 +78,9 @@ class ProductTemplate(models.Model):
         'Cost', compute='_compute_standard_price',
         inverse='_set_standard_price', search='_search_standard_price',
         digits=dp.get_precision('Product Price'), groups="base.group_user",
-        help="Cost of the product, in the default unit of measure of the product.")
+        help = "Cost used for stock valuation in standard price and as a first price to set in average/fifo. "
+               "Also used as a base price for pricelists. "
+               "Expressed in the default unit of measure of the product. ")
 
     volume = fields.Float(
         'Volume', compute='_compute_volume', inverse='_set_volume',
@@ -79,8 +89,9 @@ class ProductTemplate(models.Model):
         'Weight', compute='_compute_weight', digits=dp.get_precision('Stock Weight'),
         inverse='_set_weight', store=True,
         help="The weight of the contents in Kg, not including any packaging, etc.")
+    weight_uom_id = fields.Many2one('uom.uom', string='Weight Unit of Measure', compute='_compute_weight_uom_id')
+    weight_uom_name = fields.Char(string='Weight unit of measure label', related='weight_uom_id.name', readonly=True)
 
-    warranty = fields.Float('Warranty')
     sale_ok = fields.Boolean(
         'Can be Sold', default=True,
         help="Specify if the product can be selected in a sales order line.")
@@ -89,25 +100,26 @@ class ProductTemplate(models.Model):
         'product.pricelist', 'Pricelist', store=False,
         help='Technical field. Used for searching on pricelists, not stored in database.')
     uom_id = fields.Many2one(
-        'product.uom', 'Unit of Measure',
+        'uom.uom', 'Unit of Measure',
         default=_get_default_uom_id, required=True,
         help="Default Unit of Measure used for all stock operation.")
     uom_po_id = fields.Many2one(
-        'product.uom', 'Purchase Unit of Measure',
+        'uom.uom', 'Purchase Unit of Measure',
         default=_get_default_uom_id, required=True,
         help="Default Unit of Measure used for purchase orders. It must be in the same category than the default unit of measure.")
     company_id = fields.Many2one(
         'res.company', 'Company',
         default=lambda self: self.env['res.company']._company_default_get('product.template'), index=1)
     packaging_ids = fields.One2many(
-        'product.packaging', 'product_tmpl_id', 'Logistical Units',
-        help="Gives the different ways to package the same product. This has no impact on "
-             "the picking order and is mainly used if you use the EDI module.")
+        'product.packaging', string="Product Packages", compute="_compute_packaging_ids", inverse="_set_packaging_ids",
+        help="Gives the different ways to package the same product.")
     seller_ids = fields.One2many('product.supplierinfo', 'product_tmpl_id', 'Vendors')
+    variant_seller_ids = fields.One2many('product.supplierinfo', 'product_tmpl_id')
 
     active = fields.Boolean('Active', default=True, help="If unchecked, it will allow you to hide the product without removing it.")
     color = fields.Integer('Color Index')
 
+    is_product_variant = fields.Boolean(string='Is a product variant', compute='_compute_is_product_variant')
     attribute_line_ids = fields.One2many('product.attribute.line', 'product_tmpl_id', 'Product Attributes')
     product_variant_ids = fields.One2many('product.product', 'product_tmpl_id', 'Products', required=True)
     # performance: product_variant_id provides prefetching on the first product variant only
@@ -163,11 +175,11 @@ class ProductTemplate(models.Model):
             quantity = self._context.get('quantity', 1.0)
 
             # Support context pricelists specified as display_name or ID for compatibility
-            if isinstance(pricelist_id_or_name, basestring):
+            if isinstance(pricelist_id_or_name, pycompat.string_types):
                 pricelist_data = self.env['product.pricelist'].name_search(pricelist_id_or_name, operator='=', limit=1)
                 if pricelist_data:
                     pricelist = self.env['product.pricelist'].browse(pricelist_data[0][0])
-            elif isinstance(pricelist_id_or_name, (int, long)):
+            elif isinstance(pricelist_id_or_name, pycompat.integer_types):
                 pricelist = self.env['product.pricelist'].browse(pricelist_id_or_name)
 
             if pricelist:
@@ -182,7 +194,7 @@ class ProductTemplate(models.Model):
     def _set_template_price(self):
         if self._context.get('uom'):
             for template in self:
-                value = self.env['product.uom'].browse(self._context['uom'])._compute_price(template.price, template.uom_id)
+                value = self.env['uom.uom'].browse(self._context['uom'])._compute_price(template.price, template.uom_id)
                 template.write({'list_price': value})
         else:
             self.write({'list_price': self.price})
@@ -225,6 +237,32 @@ class ProductTemplate(models.Model):
         for template in (self - unique_variants):
             template.weight = 0.0
 
+    def _compute_is_product_variant(self):
+        for template in self:
+            if template._name == 'product.template':
+                template.is_product_variant = False
+            else:
+                template.is_product_variant = True
+
+    @api.model
+    def _get_weight_uom_id_from_ir_config_parameter(self):
+        """ Get the unit of measure to interpret the `weight` field. By default, we considerer
+        that weights are expressed in kilograms. Users can configure to express them in pounds
+        by adding an ir.config_parameter record with "product.product_weight_in_lbs" as key
+        and "1" as value.
+        """
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        product_weight_in_lbs_param = get_param('product.weight_in_lbs')
+        if product_weight_in_lbs_param == '1':
+            return self.env.ref('uom.product_uom_lb')
+        else:
+            return self.env.ref('uom.product_uom_kgm')
+
+    def _compute_weight_uom_id(self):
+        weight_uom_id = self._get_weight_uom_id_from_ir_config_parameter()
+        for product_template in self:
+            product_template.weight_uom_id = weight_uom_id
+
     @api.one
     def _set_weight(self):
         if len(self.product_variant_ids) == 1:
@@ -248,10 +286,21 @@ class ProductTemplate(models.Model):
         if len(self.product_variant_ids) == 1:
             self.product_variant_ids.default_code = self.default_code
 
+    @api.depends('product_variant_ids', 'product_variant_ids.packaging_ids')
+    def _compute_packaging_ids(self):
+        for p in self:
+            if len(p.product_variant_ids) == 1:
+                p.packaging_ids = p.product_variant_ids.packaging_ids
+
+    def _set_packaging_ids(self):
+        for p in self:
+            if len(p.product_variant_ids) == 1:
+                p.product_variant_ids.packaging_ids = p.packaging_ids
+
     @api.constrains('uom_id', 'uom_po_id')
     def _check_uom(self):
         if any(template.uom_id and template.uom_po_id and template.uom_id.category_id != template.uom_po_id.category_id for template in self):
-            raise ValidationError(_('Error: The default Unit of Measure and the purchase Unit of Measure must be in the same category.'))
+            raise ValidationError(_('The default Unit of Measure and the purchase Unit of Measure must be in the same category.'))
         return True
 
     @api.onchange('uom_id')
@@ -295,6 +344,7 @@ class ProductTemplate(models.Model):
         return res
 
     @api.multi
+    @api.returns('self', lambda value: value.id)
     def copy(self, default=None):
         # TDE FIXME: should probably be copy_data
         self.ensure_one()
@@ -310,34 +360,34 @@ class ProductTemplate(models.Model):
                 for template in self]
 
     @api.model
-    def name_search(self, name='', args=None, operator='ilike', limit=100):
+    def _name_search(self, name, args=None, operator='ilike', limit=100, name_get_uid=None):
         # Only use the product.product heuristics if there is a search term and the domain
         # does not specify a match on `product.template` IDs.
         if not name or any(term[0] == 'id' for term in (args or [])):
-            return super(ProductTemplate, self).name_search(name=name, args=args, operator=operator, limit=limit)
+            return super(ProductTemplate, self)._name_search(name=name, args=args, operator=operator, limit=limit, name_get_uid=name_get_uid)
 
         Product = self.env['product.product']
         templates = self.browse([])
         while True:
             domain = templates and [('product_tmpl_id', 'not in', templates.ids)] or []
             args = args if args is not None else []
-            products_ns = Product.name_search(name, args+domain, operator=operator)
+            products_ns = Product._name_search(name, args+domain, operator=operator, name_get_uid=name_get_uid)
             products = Product.browse([x[0] for x in products_ns])
             templates |= products.mapped('product_tmpl_id')
             if (not products) or (limit and (len(templates) > limit)):
                 break
 
         # re-apply product.template order + name_get
-        return super(ProductTemplate, self).name_search(
+        return super(ProductTemplate, self)._name_search(
             '', args=[('id', 'in', list(set(templates.ids)))],
-            operator='ilike', limit=limit)
+            operator='ilike', limit=limit, name_get_uid=name_get_uid)
 
     @api.multi
     def price_compute(self, price_type, uom=False, currency=False, company=False):
         # TDE FIXME: delegate to template or not ? fields are reencoded here ...
         # compatibility about context keys used a bit everywhere in the code
         if not uom and self._context.get('uom'):
-            uom = self.env['product.uom'].browse(self._context['uom'])
+            uom = self.env['uom.uom'].browse(self._context['uom'])
         if not currency and self._context.get('currency'):
             currency = self.env['res.currency'].browse(self._context['currency'])
 
@@ -347,6 +397,9 @@ class ProductTemplate(models.Model):
             # Thus, in order to compute the sale price from the cost for users not in this group
             # We fetch the standard price as the superuser
             templates = self.with_context(force_company=company and company.id or self._context.get('force_company', self.env.user.company_id.id)).sudo()
+        if not company:
+            company = self._context.get('force_company', self.env.user.company_id.id)
+        date = self.env.context.get('date') or fields.Date.today()
 
         prices = dict.fromkeys(self.ids, 0.0)
         for template in templates:
@@ -358,7 +411,7 @@ class ProductTemplate(models.Model):
             # Convert from current user company currency to asked one
             # This is right cause a field cannot be in more than one currency
             if currency:
-                prices[template.id] = template.currency_id.compute(prices[template.id], currency)
+                prices[template.id] = template.currency_id._convert(prices[template.id], currency, company, date)
 
         return prices
 
@@ -370,6 +423,7 @@ class ProductTemplate(models.Model):
     @api.multi
     def create_variant_ids(self):
         Product = self.env["product.product"]
+        AttributeValues = self.env['product.attribute.value']
         for tmpl_id in self.with_context(active_test=False):
             # adding an attribute with only one value should not recreate product
             # write this attribute on every product to make sure we don't lose them
@@ -378,11 +432,21 @@ class ProductTemplate(models.Model):
                 updated_products = tmpl_id.product_variant_ids.filtered(lambda product: value_id.attribute_id not in product.mapped('attribute_value_ids.attribute_id'))
                 updated_products.write({'attribute_value_ids': [(4, value_id.id)]})
 
-            # list of values combination
-            existing_variants = [set(variant.attribute_value_ids.filtered(lambda r: r.attribute_id.create_variant).ids) for variant in tmpl_id.product_variant_ids]
-            variant_matrix = itertools.product(*(line.value_ids for line in tmpl_id.attribute_line_ids if line.value_ids and line.value_ids[0].attribute_id.create_variant))
-            variant_matrix = map(lambda record_list: reduce(lambda x, y: x+y, record_list, self.env['product.attribute.value']), variant_matrix)
-            to_create_variants = filter(lambda rec_set: set(rec_set.ids) not in existing_variants, variant_matrix)
+            # iterator of n-uple of product.attribute.value *ids*
+            variant_matrix = [
+                AttributeValues.browse(value_ids)
+                for value_ids in itertools.product(*(line.value_ids.ids for line in tmpl_id.attribute_line_ids if line.value_ids[:1].attribute_id.create_variant))
+            ]
+
+            # get the value (id) sets of existing variants
+            existing_variants = {frozenset(variant.attribute_value_ids.filtered(lambda r: r.attribute_id.create_variant).ids) for variant in tmpl_id.product_variant_ids}
+            # -> for each value set, create a recordset of values to create a
+            #    variant for if the value set isn't already a variant
+            to_create_variants = [
+                value_ids
+                for value_ids in variant_matrix
+                if set(value_ids.ids) not in existing_variants
+            ]
 
             # check product
             variants_to_activate = self.env['product.product']
@@ -412,3 +476,10 @@ class ProductTemplate(models.Model):
                     variant.write({'active': False})
                     pass
         return True
+
+    @api.model
+    def get_empty_list_help(self, help):
+        self = self.with_context(
+            empty_list_help_document_name=_("product"),
+        )
+        return super(ProductTemplate, self).get_empty_list_help(help)

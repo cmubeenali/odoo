@@ -3,23 +3,22 @@
 # * bus
 # 
 # Translators:
+# Xavier Belmere <Info@cartmeleon.com>, 2016
+# Martin Trigaux <mat@odoo.com>, 2016
 # Richard Mathot <rim@odoo.com>, 2016
 # Xavier Symons <xsy@openerp.com>, 2016
-# Xavier Belmere <Info@cartmeleon.com>, 2016
 # Maxime Chambreuil <mchambreuil@ursainfosystems.com>, 2016
-# Martin Trigaux <mat@odoo.com>, 2016
-# Olivier Dony <odo@odoo.com>, 2016
 # Lucas Deliege <lud@odoo.com>, 2016
 # Olivier Lenoir <olivier.lenoir@free.fr>, 2016
-# Adriana Ierfino <adriana.ierfino@savoirfairelinux.com>, 2016
 # ShevAbam <shevabam@gmail.com>, 2016
+# Adriana Ierfino <adriana.ierfino@savoirfairelinux.com>, 2017
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server 10.0c\n"
+"Project-Id-Version: Odoo Server saas~11.1\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-09-07 08:56+0000\n"
-"PO-Revision-Date: 2016-09-07 08:56+0000\n"
-"Last-Translator: ShevAbam <shevabam@gmail.com>, 2016\n"
+"POT-Creation-Date: 2017-12-13 14:36+0000\n"
+"PO-Revision-Date: 2017-12-13 14:36+0000\n"
+"Last-Translator: Adriana Ierfino <adriana.ierfino@savoirfairelinux.com>, 2017\n"
 "Language-Team: French (https://www.transifex.com/odoo/teams/41243/fr/)\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -43,6 +42,11 @@ msgid "Channel"
 msgstr "Canal"
 
 #. module: bus
+#: model:ir.model,name:bus.model_res_partner
+msgid "Contact"
+msgstr "Contact"
+
+#. module: bus
 #: model:ir.model.fields,field_description:bus.field_bus_bus_create_date
 msgid "Create date"
 msgstr "Date de création"
@@ -57,21 +61,6 @@ msgstr "Créé par"
 #: model:ir.model.fields,field_description:bus.field_bus_presence_display_name
 msgid "Display Name"
 msgstr "Nom affiché"
-
-#. module: bus
-#: model:ir.model.fields,field_description:bus.field_res_users_partner_latitude
-msgid "Geo Latitude"
-msgstr "Latitude"
-
-#. module: bus
-#: model:ir.model.fields,field_description:bus.field_res_users_partner_longitude
-msgid "Geo Longitude"
-msgstr "Longitude"
-
-#. module: bus
-#: model:ir.model.fields,field_description:bus.field_res_users_date_localization
-msgid "Geolocation Date"
-msgstr "Date de géolocalisation"
 
 #. module: bus
 #: model:ir.model.fields,field_description:bus.field_bus_bus_id
@@ -128,11 +117,6 @@ msgid "Online"
 msgstr "En ligne"
 
 #. module: bus
-#: model:ir.model,name:bus.model_res_partner
-msgid "Partner"
-msgstr "Partenaire"
-
-#. module: bus
 #: model:ir.model,name:bus.model_bus_presence
 msgid "User Presence"
 msgstr "Présence de l'utilisateur"
@@ -142,6 +126,12 @@ msgstr "Présence de l'utilisateur"
 #: model:ir.model.fields,field_description:bus.field_bus_presence_user_id
 msgid "Users"
 msgstr "Utilisateurs"
+
+#. module: bus
+#: code:addons/bus/controllers/main.py:41
+#, python-format
+msgid "bus.Bus not available in test mode"
+msgstr ""
 
 #. module: bus
 #: model:ir.model,name:bus.model_bus_bus

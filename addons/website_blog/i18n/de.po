@@ -3,27 +3,29 @@
 # * website_blog
 # 
 # Translators:
-# Ermin Trevisan <trevi@twanda.com>, 2016
-# Martin Trigaux, 2016
-# Wolfgang Taferner, 2016
-# darenkster <inactive+darenkster@transifex.com>, 2016
-# Renzo Meister, 2016
-# Henry Mineehen <info@mineehen.de>, 2016
-# Rudolf Schnapka <rs@techno-flex.de>, 2016
-# JackTheHunter <Maximilian.N98@gmail.com>, 2016
-# Tina Rittmüller <tr@ife.de>, 2016
-# Martin K <martinkuenz@gmail.com>, 2016
-# Mathias Neef <mn@copado.de>, 2016
-# Thorsten Vocks <thorsten.vocks@openbig.org>, 2016
-# Torsten Wichmann <t.wichmann@intero-technologies.de>, 2016
+# JackTheHunter <Maximilian.N98@gmail.com>, 2017
+# Martin Trigaux, 2017
+# Wolfgang Taferner, 2017
+# darenkster <inactive+darenkster@transifex.com>, 2017
+# Ermin Trevisan <trevi@twanda.com>, 2017
+# Tina Rittmüller <tr@ife.de>, 2017
+# Martin K <martinkuenz@gmail.com>, 2017
+# Krakataua Katarajtu <shlok@hotmail.de>, 2017
+# Torsten Wichmann <t.wichmann@intero-technologies.de>, 2017
+# Niki Waibel, 2017
+# Mathias Neef <mn@copado.de>, 2017
+# Renzo Meister, 2017
+# Thorsten Vocks <thorsten.vocks@openbig.org>, 2017
+# Henry Mineehen <info@mineehen.de>, 2017
+# Rudolf Schnapka <rs@techno-flex.de>, 2017
 # Andi, 2017
 # e2f <projects@e2f.com>, 2018
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server 10.0\n"
+"Project-Id-Version: Odoo Server 11.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-06-23 13:28+0000\n"
-"PO-Revision-Date: 2017-06-23 13:28+0000\n"
+"POT-Creation-Date: 2017-10-24 09:00+0000\n"
+"PO-Revision-Date: 2017-10-24 09:00+0000\n"
 "Last-Translator: e2f <projects@e2f.com>, 2018\n"
 "Language-Team: German (https://www.transifex.com/odoo/teams/41243/de/)\n"
 "MIME-Version: 1.0\n"
@@ -276,7 +278,8 @@ msgid "Blog Name"
 msgstr "Blogbezeichnung"
 
 #. module: website_blog
-#: code:addons/website_blog/models/website.py:23
+#: code:addons/website_blog/models/website.py:22
+#: code:addons/website_blog/models/website.py:47
 #: model:ir.model,name:website_blog.model_blog_post
 #: model:ir.ui.view,arch_db:website_blog.view_blog_post_form
 #: model:ir.ui.view,arch_db:website_blog.view_blog_post_search
@@ -285,7 +288,13 @@ msgid "Blog Post"
 msgstr "Blogeintrag"
 
 #. module: website_blog
-#: code:addons/website_blog/models/website.py:27
+#: code:addons/website_blog/models/website.py:53
+#, python-format
+msgid "Blog Post <b>%s</b> seems to be calling this file !"
+msgstr "Blog-Beitrag <b>%s</b> scheint diese Datei aufzurufen!"
+
+#. module: website_blog
+#: code:addons/website_blog/models/website.py:28
 #, python-format
 msgid "Blog Post <b>%s</b> seems to have a link to this page !"
 msgstr "Blog-Beitrag <b>%s</b> scheint einen Link zu dieser Seite zu haben !"
@@ -298,9 +307,12 @@ msgid "Blog Post Title"
 msgstr "Blognachricht Überschrift"
 
 #. module: website_blog
+#: code:addons/website_blog/models/website.py:24
+#: code:addons/website_blog/models/website.py:49
 #: model:ir.actions.act_window,name:website_blog.action_blog_post
 #: model:ir.ui.menu,name:website_blog.menu_page
 #: model:ir.ui.view,arch_db:website_blog.view_blog_post_list
+#, python-format
 msgid "Blog Posts"
 msgstr "Blog-Nachrichten"
 
@@ -406,7 +418,7 @@ msgstr "Erstellt von"
 #: model:ir.model.fields,field_description:website_blog.field_blog_post_create_date
 #: model:ir.model.fields,field_description:website_blog.field_blog_tag_create_date
 msgid "Created on"
-msgstr "Angelegt am"
+msgstr "Erstellt am"
 
 #. module: website_blog
 #: model:ir.model.fields,field_description:website_blog.field_mail_compose_message_path
@@ -424,7 +436,7 @@ msgid "Display Name"
 msgstr "Anzeigename"
 
 #. module: website_blog
-#: model:ir.ui.view,arch_db:website_blog.blog_post_complete
+#: model:ir.ui.view,arch_db:website_blog.blog_edit_options
 msgid "Duplicate"
 msgstr "Duplizieren"
 
@@ -522,7 +534,7 @@ msgstr "Grün"
 #. module: website_blog
 #: model:ir.ui.view,arch_db:website_blog.view_blog_post_search
 msgid "Group By"
-msgstr "Gruppiert nach..."
+msgstr "Gruppieren nach"
 
 #. module: website_blog
 #: model:blog.post,content:website_blog.blog_post_1
@@ -690,7 +702,7 @@ msgstr "Verschmälern"
 
 #. module: website_blog
 #. openerp-web
-#: code:addons/website_blog/static/src/js/website_blog.editor.js:21
+#: code:addons/website_blog/static/src/js/website_blog.editor.js:37
 #: model:ir.ui.view,arch_db:website_blog.content_new_blogpost
 #, python-format
 msgid "New Blog Post"
@@ -729,7 +741,7 @@ msgstr "Anzahl der Anzeigen"
 #. module: website_blog
 #: model:ir.ui.view,arch_db:website_blog.website_blog
 msgid "None"
-msgstr "Transparent"
+msgstr "Keine"
 
 #. module: website_blog
 #: model:blog.post,content:website_blog.blog_post_2
@@ -789,7 +801,7 @@ msgstr ""
 " Anhängen von Dokumenten gelingt im Handumdrehen."
 
 #. module: website_blog
-#: code:addons/website_blog/controllers/main.py:263
+#: code:addons/website_blog/controllers/main.py:270
 #, python-format
 msgid "Public user cannot post comments on blog post."
 msgstr ""
@@ -812,14 +824,14 @@ msgid "Published Post"
 msgstr "Veröffentlichte Beiträge"
 
 #. module: website_blog
-#: model:ir.model.fields,field_description:website_blog.field_blog_post_post_date
-msgid "Published date"
-msgstr ""
-
-#. module: website_blog
 #: model:ir.ui.view,arch_db:website_blog.view_blog_post_form
 msgid "Publishing Options"
 msgstr "Veröffentlichungsoptionen"
+
+#. module: website_blog
+#: model:ir.model.fields,field_description:website_blog.field_blog_post_post_date
+msgid "Publishing date"
+msgstr "Veröffentlichungsdatum"
 
 #. module: website_blog
 #: model:ir.ui.view,arch_db:website_blog.website_blog
@@ -893,7 +905,7 @@ msgstr ""
 
 #. module: website_blog
 #. openerp-web
-#: code:addons/website_blog/models/website_blog.py:103
+#: code:addons/website_blog/models/website_blog.py:123
 #: code:addons/website_blog/static/src/js/website.tour.blog.js:52
 #, python-format
 msgid "Start writing here..."
@@ -966,6 +978,15 @@ msgstr "Der Kommunikationsmechanismus von Odoo"
 #: model:blog.post,website_meta_description:website_blog.blog_post_1
 msgid "The Future of Emails"
 msgstr "Die Zukunft der E-Mail"
+
+#. module: website_blog
+#: model:ir.model.fields,help:website_blog.field_blog_post_post_date
+msgid ""
+"The blog post will be visible for your visitors as of this date on the "
+"website if it is set as published."
+msgstr ""
+"Der Blog-Beitrag ist ab diesem Datum für Ihre Besucher auf der Website "
+"sichtbar, wenn er als veröffentlicht festgelegt wird."
 
 #. module: website_blog
 #: model:ir.ui.view,arch_db:website_blog.latest_blogs
@@ -1054,17 +1075,17 @@ msgstr "Website"
 #. module: website_blog
 #: model:ir.actions.act_url,name:website_blog.action_open_website
 msgid "Website Blogs"
-msgstr "Website Blogs"
+msgstr "Website-Blogs"
 
 #. module: website_blog
 #: model:ir.model.fields,field_description:website_blog.field_blog_post_website_message_ids
 msgid "Website Messages"
-msgstr "Website-Meldungen"
+msgstr "Website-Nachrichten"
 
 #. module: website_blog
 #: model:ir.model.fields,help:website_blog.field_blog_post_website_message_ids
 msgid "Website communication history"
-msgstr "Website-Kommunikationsverlauf"
+msgstr "Website-Kommunikationshistorie"
 
 #. module: website_blog
 #: model:ir.ui.view,arch_db:website_blog.website_blog

@@ -7,11 +7,12 @@ import logging
 import psycopg2
 import threading
 
+from collections import defaultdict
 from email.utils import formataddr
 
 from odoo import _, api, fields, models
 from odoo import tools
-from odoo.addons.base.ir.ir_mail_server import MailDeliveryException
+from odoo.addons.base.models.ir_mail_server import MailDeliveryException
 from odoo.tools.safe_eval import safe_eval
 
 _logger = logging.getLogger(__name__)
@@ -60,16 +61,15 @@ class MailMail(models.Model):
         # notification field: if not set, set if mail comes from an existing mail.message
         if 'notification' not in values and values.get('mail_message_id'):
             values['notification'] = True
-        if not values.get('mail_message_id'):
-            self = self.with_context(message_create_from_mail_mail=True)
         return super(MailMail, self).create(values)
 
     @api.multi
     def unlink(self):
         # cascade-delete the parent message for all mails that are not created for a notification
-        to_cascade = self.search([('notification', '=', False), ('id', 'in', self.ids)]).mapped('mail_message_id')
+        mail_msg_cascade_ids = [mail.mail_message_id.id for mail in self if not mail.notification]
         res = super(MailMail, self).unlink()
-        to_cascade.unlink()
+        if mail_msg_cascade_ids:
+            self.env['mail.message'].browse(mail_msg_cascade_ids).unlink()
         return res
 
     @api.model
@@ -111,7 +111,8 @@ class MailMail(models.Model):
                        ('scheduled_date', '=', False)]
             if 'filters' in self._context:
                 filters.extend(self._context['filters'])
-            ids = self.search(filters).ids
+            # TODO: make limit configurable
+            ids = self.search(filters, limit=10000).ids
         res = None
         try:
             # auto-commit except in testing mode
@@ -128,24 +129,24 @@ class MailMail(models.Model):
         attachment if the ``auto_delete`` flag of the mail was set.
         Overridden by subclasses for extra post-processing behaviors.
 
-        :param browse_record mail: the mail that was just sent
         :return: True
         """
-        notif_emails = self.filtered(lambda email: email.notification)
-        if notif_emails:
+        mail_message_notif_ids = [mail.mail_message_id.id for mail in self if mail.notification]
+        if mail_message_notif_ids:
             notifications = self.env['mail.notification'].search([
-                ('mail_message_id', 'in', notif_emails.mapped('mail_message_id').ids),
+                ('mail_message_id', 'in', mail_message_notif_ids),
                 ('is_email', '=', True)])
-            if mail_sent:
+            if notifications and mail_sent:
                 notifications.write({
                     'email_status': 'sent',
                 })
-            else:
+            elif notifications:
                 notifications.write({
                     'email_status': 'exception',
                 })
         if mail_sent:
-            self.sudo().filtered(lambda self: self.auto_delete).unlink()
+            mail_to_delete_ids = [mail.id for mail in self if mail.auto_delete]
+            self.browse(mail_to_delete_ids).sudo().unlink()
         return True
 
     # ------------------------------------------------------
@@ -153,42 +154,50 @@ class MailMail(models.Model):
     # ------------------------------------------------------
 
     @api.multi
-    def send_get_mail_body(self, partner=None):
+    def _send_prepare_body(self):
         """Return a specific ir_email body. The main purpose of this method
         is to be inherited to add custom content depending on some module."""
         self.ensure_one()
-        body = self.body_html or ''
-        return body
+        return self.body_html or ''
 
     @api.multi
-    def send_get_mail_to(self, partner=None):
-        """Forge the email_to with the following heuristic:
-          - if 'partner', recipient specific (Partner Name <email>)
-          - else fallback on mail.email_to splitting """
-        self.ensure_one()
-        if partner:
-            email_to = [formataddr((partner.name, partner.email))]
-        else:
-            email_to = tools.email_split_and_format(self.email_to)
-        return email_to
-
-    @api.multi
-    def send_get_email_dict(self, partner=None):
+    def _send_prepare_values(self, partner=None):
         """Return a dictionary for specific email values, depending on a
         partner, or generic to the whole recipients given by mail.email_to.
 
-            :param browse_record mail: mail.mail browse_record
-            :param browse_record partner: specific recipient partner
+            :param Model partner: specific recipient partner
         """
         self.ensure_one()
-        body = self.send_get_mail_body(partner=partner)
+        body = self._send_prepare_body()
         body_alternative = tools.html2plaintext(body)
+        if partner:
+            email_to = [formataddr((partner.name or 'False', partner.email or 'False'))]
+        else:
+            email_to = tools.email_split_and_format(self.email_to)
         res = {
             'body': body,
             'body_alternative': body_alternative,
-            'email_to': self.send_get_mail_to(partner=partner),
+            'email_to': email_to,
         }
         return res
+
+    @api.multi
+    def _split_by_server(self):
+        """Returns an iterator of pairs `(mail_server_id, record_ids)` for current recordset.
+
+        The same `mail_server_id` may repeat in order to limit batch size according to
+        the `mail.session.batch.size` system parameter.
+        """
+        groups = defaultdict(list)
+        # Turn prefetch OFF to avoid MemoryError on very large mail queues, we only care
+        # about the mail server ids in this case.
+        for mail in self.with_context(prefetch_fields=False):
+            groups[mail.mail_server_id.id].append(mail.id)
+        sys_params = self.env['ir.config_parameter'].sudo()
+        batch_size = int(sys_params.get_param('mail.session.batch.size', 1000))
+        for server_id, record_ids in groups.items():
+            for mail_batch in tools.split_every(batch_size, record_ids):
+                yield server_id, mail_batch
 
     @api.multi
     def send(self, auto_commit=False, raise_exception=False):
@@ -206,36 +215,58 @@ class MailMail(models.Model):
                 email sending process has failed
             :return: True
         """
-        IrMailServer = self.env['ir.mail_server']
+        for server_id, batch_ids in self._split_by_server():
+            smtp_session = None
+            try:
+                smtp_session = self.env['ir.mail_server'].connect(mail_server_id=server_id)
+            except Exception as exc:
+                if raise_exception:
+                    # To be consistent and backward compatible with mail_mail.send() raised
+                    # exceptions, it is encapsulated into an Odoo MailDeliveryException
+                    raise MailDeliveryException(_('Unable to connect to SMTP Server'), exc)
+                else:
+                    self.browse(batch_ids).write({'state': 'exception', 'failure_reason': exc})
+            else:
+                self.browse(batch_ids)._send(
+                    auto_commit=auto_commit,
+                    raise_exception=raise_exception,
+                    smtp_session=smtp_session)
+                _logger.info(
+                    'Sent batch %s emails via mail server ID #%s',
+                    len(batch_ids), server_id)
+            finally:
+                if smtp_session:
+                    smtp_session.quit()
 
+    @api.multi
+    def _send(self, auto_commit=False, raise_exception=False, smtp_session=None):
+        IrMailServer = self.env['ir.mail_server']
         for mail_id in self.ids:
             try:
                 mail = self.browse(mail_id)
-                # TDE note: remove me when model_id field is present on mail.message - done here to avoid doing it multiple times in the sub method
-                if mail.model:
-                    model = self.env['ir.model'].sudo().search([('model', '=', mail.model)])[0]
-                else:
-                    model = None
-                if model:
-                    mail = mail.with_context(model_name=model.name)
+                if mail.state != 'outgoing':
+                    if mail.state != 'exception' and mail.auto_delete:
+                        mail.sudo().unlink()
+                    continue
 
                 # load attachment binary data with a separate read(), as prefetching all
                 # `datas` (binary field) could bloat the browse cache, triggerring
                 # soft/hard mem limits with temporary data.
-                attachments = [(a['datas_fname'], base64.b64decode(a['datas']))
-                               for a in mail.attachment_ids.sudo().read(['datas_fname', 'datas'])]
+                attachments = [(a['datas_fname'], base64.b64decode(a['datas']), a['mimetype'])
+                               for a in mail.attachment_ids.sudo().read(['datas_fname', 'datas', 'mimetype'])]
 
                 # specific behavior to customize the send email for notified partners
                 email_list = []
                 if mail.email_to:
-                    email_list.append(mail.send_get_email_dict())
+                    email_list.append(mail._send_prepare_values())
                 for partner in mail.recipient_ids:
-                    email_list.append(mail.send_get_email_dict(partner=partner))
+                    email_list.append(mail._send_prepare_values(partner=partner))
 
                 # headers
                 headers = {}
-                bounce_alias = self.env['ir.config_parameter'].get_param("mail.bounce.alias")
-                catchall_domain = self.env['ir.config_parameter'].get_param("mail.catchall.domain")
+                ICP = self.env['ir.config_parameter'].sudo()
+                bounce_alias = ICP.get_param("mail.bounce.alias")
+                catchall_domain = ICP.get_param("mail.catchall.domain")
                 if bounce_alias and catchall_domain:
                     if mail.model and mail.res_id:
                         headers['Return-Path'] = '%s+%d-%s-%d@%s' % (bounce_alias, mail.id, mail.model, mail.res_id, catchall_domain)
@@ -275,9 +306,10 @@ class MailMail(models.Model):
                         subtype_alternative='plain',
                         headers=headers)
                     try:
-                        res = IrMailServer.send_email(msg, mail_server_id=mail.mail_server_id.id)
+                        res = IrMailServer.send_email(
+                            msg, mail_server_id=mail.mail_server_id.id, smtp_session=smtp_session)
                     except AssertionError as error:
-                        if error.message == IrMailServer.NO_VALID_RECIPIENT:
+                        if str(error) == IrMailServer.NO_VALID_RECIPIENT:
                             # No valid recipient found for this particular
                             # mail item -> ignore error to avoid blocking
                             # delivery to next recipients, if any. If this is

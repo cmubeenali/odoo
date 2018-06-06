@@ -3,12 +3,13 @@
 # * pos_cache
 # 
 # Translators:
-# Hamid Darabi <hamid.darabi@gmail.com>, 2016
-# Martin Trigaux <mat@odoo.com>, 2016
+# Hamed Mohammadi <hamed@dehongi.com>, 2017
+# Martin Trigaux <mat@odoo.com>, 2017
+# Hamid Darabi <hamid.darabi@gmail.com>, 2017
 # Sepehr Khoshnood <sepehr.kho@gmail.com>, 2017
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server 10.0c\n"
+"Project-Id-Version: Odoo Server 9.0\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2015-09-29 10:26+0000\n"
 "PO-Revision-Date: 2015-09-29 10:26+0000\n"
@@ -53,7 +54,7 @@ msgstr "ایجاد شده در"
 #. module: pos_cache
 #: model:ir.model.fields,field_description:pos_cache.field_pos_cache_display_name
 msgid "Display Name"
-msgstr "نام نمایشی"
+msgstr "نام نشان داده شده"
 
 #. module: pos_cache
 #: model:ir.model.fields,field_description:pos_cache.field_pos_cache_id

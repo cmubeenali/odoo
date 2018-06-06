@@ -8,7 +8,7 @@ class ReportOverdue(models.AbstractModel):
     _name = 'report.account.report_overdue'
 
     def _get_account_move_lines(self, partner_ids):
-        res = dict(map(lambda x:(x,[]), partner_ids))
+        res = {x: [] for x in partner_ids}
         self.env.cr.execute("SELECT m.name AS move_id, l.date, l.name, l.ref, l.date_maturity, l.partner_id, l.blocked, l.amount_currency, l.currency_id, "
             "CASE WHEN at.type = 'receivable' "
                 "THEN SUM(l.debit) "
@@ -31,7 +31,7 @@ class ReportOverdue(models.AbstractModel):
         return res
 
     @api.model
-    def render_html(self, docids, data=None):
+    def get_report_values(self, docids, data=None):
         totals = {}
         lines = self._get_account_move_lines(docids)
         lines_to_display = {}
@@ -57,7 +57,7 @@ class ReportOverdue(models.AbstractModel):
                     totals[partner_id][currency]['paid'] += line['credit']
                     totals[partner_id][currency]['mat'] += line['mat']
                     totals[partner_id][currency]['total'] += line['debit'] - line['credit']
-        docargs = {
+        return {
             'doc_ids': docids,
             'doc_model': 'res.partner',
             'docs': self.env['res.partner'].browse(docids),
@@ -65,5 +65,5 @@ class ReportOverdue(models.AbstractModel):
             'Lines': lines_to_display,
             'Totals': totals,
             'Date': fields.date.today(),
+            'company_id': self.env['res.company'].browse([self.env.user.company_id.id]),
         }
-        return self.env['report'].render('account.report_overdue', values=docargs)
